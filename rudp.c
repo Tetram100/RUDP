@@ -12,6 +12,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include <time.h>
+
 #include "event.h"
 #include "rudp.h"
 #include "rudp_api.h"
@@ -20,6 +22,9 @@
 
 
 int receiveDataCallback(int fd, void *arg);
+
+
+
 
 /* 
  * rudp_socket: Create a RUDP socket. 
@@ -31,14 +36,22 @@ rudp_socket_t rudp_socket(int port) {
 
 	int s = socket (AF_INET, SOCK_DGRAM, 0);
 	if(s==-1){
-		printf("Error while pening the socket. Stop sending.\n");
+		printf("Error while opening the socket. Stop sending.\n");
 		return 0;
+	}
+
+	int p = port;
+
+	// if port = 0, the function should choose randomly a port number.
+	if(p == 0){
+		srand(time(NULL));
+		p = rand()%60000 + 5000; // port between 5000 and 65000
 	}
 
 	struct sockaddr_in s_receiver;
 	s_receiver.sin_family = AF_INET;
 	s_receiver.sin_addr.s_addr = htonl(INADDR_ANY);
-	s_receiver.sin_port = htons(port);
+	s_receiver.sin_port = htons(p);
 
 	if(bind(s, (struct sockaddr *) &s_receiver, sizeof(s_receiver)) == -1)
 	{
@@ -48,11 +61,11 @@ rudp_socket_t rudp_socket(int port) {
 
 
 	if(event_fd(s,receiveDataCallback, s, "receiveDataCallback") < 0) {
-		printf("Error while registering the callback function of the socket.");
+		printf("Error while registering the callback function of the socket.\n");
 		return NULL;
 	}
 
-	rudp_socket_t rudp_socket = (rudp_socket_t)s;
+	rudp_socket_t rudp_socket = (rudp_socket_t) s;
 
 	return rudp_socket;
 }
