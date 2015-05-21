@@ -18,13 +18,43 @@
 #include "getaddr.h"
 #include "sockaddr6.h"
 
+
+int receiveDataCallback(int fd, void *arg);
+
 /* 
  * rudp_socket: Create a RUDP socket. 
  * May use a random port by setting port to zero. 
  */
 
 rudp_socket_t rudp_socket(int port) {
-	return NULL;
+
+
+	int s = socket (AF_INET, SOCK_DGRAM, 0);
+	if(s==-1){
+		printf("Error while pening the socket. Stop sending.\n");
+		return 0;
+	}
+
+	struct sockaddr_in s_receiver;
+	s_receiver.sin_family = AF_INET;
+	s_receiver.sin_addr.s_addr = htonl(INADDR_ANY);
+	s_receiver.sin_port = htons(port);
+
+	if(bind(s, (struct sockaddr *) &s_receiver, sizeof(s_receiver)) == -1)
+	{
+		printf("Error while binding the socket\n");
+		return NULL;
+	}
+
+
+	if(event_fd(s,receiveDataCallback, s, "receiveDataCallback") < 0) {
+		printf("Error while registering the callback function of the socket.");
+		return NULL;
+	}
+
+	rudp_socket_t rudp_socket = (rudp_socket_t)s;
+
+	return rudp_socket;
 }
 
 /* 
@@ -63,3 +93,6 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
 	return 0;
 }
 
+int receiveDataCallback(int fd, void *arg) {
+
+}
