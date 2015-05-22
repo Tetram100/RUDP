@@ -21,6 +21,11 @@
 #include "sockaddr6.h"
 
 
+struct rudp_packet_t {
+    struct rudp_hdr header;
+    char data[RUDP_MAXPKTSIZE];
+} __attribute__((packed));
+
 int receiveDataCallback(int fd, void *arg);
 
 
@@ -108,4 +113,45 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
 
 int receiveDataCallback(int fd, void *arg) {
 
+	rudp_socket_t *rudp_socket = (rudp_socket_t*) arg;
+
+	struct sockaddr_in sender;
+	int addr_size = sizeof(sender);
+
+	struct rudp_packet_t rudp_receive;
+	memset(&rudp_receive, 0x0, sizeof(struct rudp_packet_t));
+
+    int bytes = recvfrom(fd, &rudp_receive, sizeof (rudp_receive), 0, (struct sockaddr*) &sender, (socklen_t*) & addr_size);
+
+    //Verifications
+    if (bytes <=0){
+    	printf("Error while receiving the data\n");
+    	return -1;
+    }
+    if (rudp_receive.header.version != RUDP_VERSION){
+    	printf("Wrong RUDP version\n");
+    	return -1;    	
+    }
+
+    switch(rudp_receive.header.type) {
+    	case RUDP_DATA:
+
+    		return;
+
+    	case RUDP_ACK:
+
+
+    		return;
+
+    	case RUDP_SYN:
+
+
+    		return;
+
+    	case RUDP_FIN:
+
+
+    		return;
+
+    }
 }
