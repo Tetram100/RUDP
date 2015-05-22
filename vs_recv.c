@@ -101,13 +101,13 @@ int main(int argc, char* argv[]) {
 	 * Register receiver callback function
 	 */
 
-	rudp_recvfrom_handler(rsock, recvfromhandler);
+	rudp_recvfrom_handler(rsock, recvfrom_handler);
 
 	/*
 	 * Register event handler callback function
 	 */
 
-	rudp_event_handler(rsock, eventhandler);
+	rudp_event_handler(rsock, event_handler);
 
 	if (debug) {
 		printf("RUDP receiver waiting on port %i.\n",port);
@@ -174,7 +174,7 @@ int event_handler(rudp_socket_t rsocket, rudp_event_t event, struct sockaddr_in6
 	switch (event) {
 	case RUDP_EVENT_TIMEOUT:
 		if (remote) {
-			fprintf(stderr, "vs_recv: time out in communication with %s:%s\n",
+			fprintf(stderr, "vs_recv: timeout in communication with %s:%s\n",
 				getnameinfohost(remote), getnameinfoserv(remote));
 			if ((rx = rxfind(remote))) {
 				if (rx->fileopen) {
@@ -184,7 +184,7 @@ int event_handler(rudp_socket_t rsocket, rudp_event_t event, struct sockaddr_in6
 			}
 		}
 		else {
-			fprintf(stderr, "vs_recv: time out\n");
+			fprintf(stderr, "vs_recv: timeout\n");
 		}
 		break;
 	case RUDP_EVENT_CLOSED:

@@ -99,12 +99,12 @@ int eventhandler(rudp_socket_t rsocket, rudp_event_t event, struct sockaddr_in6 
 	switch (event) {
 	case RUDP_EVENT_TIMEOUT:
 		if (remote) {
-			fprintf(stderr, "vs_send: time out in communication with %s:%s\n",
+			fprintf(stderr, "vs_send: timeout in communication with %s:%s\n",
 				getnameinfohost(remote),
 				getnameinfoserv(remote));
 		}
 		else {
-			fprintf(stderr, "vs_send: time out\n");
+			fprintf(stderr, "vs_send: timeout\n");
 		}
 		exit(1);
 		break;
