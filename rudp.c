@@ -28,8 +28,12 @@ struct rudp_packet_t {
 
 int receiveDataCallback(int fd, void *arg);
 
-
-
+// TODO Question : est-ce que avoir des variables globales suffit dans notre cas ? -> on n'est censé ne gérer qu'une seule socket par programme.
+//		utililsation d'un flag qui dit si une fonction à déjà été enregistré pour ce programme et du coup refuse d'en changer? 
+// ---> mieux : flag pour dire qu'une socket à déjà était ouverte, et du coup on renvoit un NULL
+int (*handler_receive)(rudp_socket_t, struct sockaddr_in6 *, void *, int);
+int (*handler_event)(rudp_socket_t, rudp_event_t, struct sockaddr_in6 *);
+int socket_open = 0;
 
 /* 
  * rudp_socket: Create a RUDP socket. 
@@ -38,41 +42,46 @@ int receiveDataCallback(int fd, void *arg);
 
 rudp_socket_t rudp_socket(int port) {
 
+	if(socket_open != 1){
+		int s = socket (AF_INET, SOCK_DGRAM, 0);
+		if(s==-1){
+			printf("Error while opening the socket. Stop sending.\n");
+			return 0;
+		}
 
-	int s = socket (AF_INET, SOCK_DGRAM, 0);
-	if(s==-1){
-		printf("Error while opening the socket. Stop sending.\n");
-		return 0;
+		int p = port;
+
+		// if port = 0, the function should choose randomly a port number.
+		if(p == 0){
+			srand(time(NULL));
+			p = rand()%60000 + 5000; // port between 5000 and 65000
+		}
+
+		struct sockaddr_in s_receiver;
+		s_receiver.sin_family = AF_INET;
+		s_receiver.sin_addr.s_addr = htonl(INADDR_ANY);
+		s_receiver.sin_port = htons(p);
+
+		if(bind(s, (struct sockaddr *) &s_receiver, sizeof(s_receiver)) == -1)
+		{
+			printf("Error while binding the socket\n");
+			return NULL;
+		}
+
+
+		if(event_fd(s,receiveDataCallback, s, "receiveDataCallback") < 0) {
+			printf("Error while registering the callback function of the socket.\n");
+			return NULL;
+		}
+
+		rudp_socket_t rudp_socket = (rudp_socket_t) s;
+
+		return rudp_socket;
 	}
-
-	int p = port;
-
-	// if port = 0, the function should choose randomly a port number.
-	if(p == 0){
-		srand(time(NULL));
-		p = rand()%60000 + 5000; // port between 5000 and 65000
+	else{
+		printf("A socket has already been opened\n");
+		return NULL
 	}
-
-	struct sockaddr_in s_receiver;
-	s_receiver.sin_family = AF_INET;
-	s_receiver.sin_addr.s_addr = htonl(INADDR_ANY);
-	s_receiver.sin_port = htons(p);
-
-	if(bind(s, (struct sockaddr *) &s_receiver, sizeof(s_receiver)) == -1)
-	{
-		printf("Error while binding the socket\n");
-		return NULL;
-	}
-
-
-	if(event_fd(s,receiveDataCallback, s, "receiveDataCallback") < 0) {
-		printf("Error while registering the callback function of the socket.\n");
-		return NULL;
-	}
-
-	rudp_socket_t rudp_socket = (rudp_socket_t) s;
-
-	return rudp_socket;
 }
 
 /* 
@@ -90,6 +99,7 @@ int rudp_close(rudp_socket_t rsocket) {
 int rudp_recvfrom_handler(rudp_socket_t rsocket, 
 			  int (*handler)(rudp_socket_t, struct sockaddr_in6 *, 
 					 void *, int)) {
+	handler_receive = handler;
 	return 0;
 }
 
@@ -99,6 +109,7 @@ int rudp_recvfrom_handler(rudp_socket_t rsocket,
 int rudp_event_handler(rudp_socket_t rsocket, 
 		       int (*handler)(rudp_socket_t, rudp_event_t, 
 				      struct sockaddr_in6 *)) {
+	handler_event = handler;
 	return 0;
 }
 
@@ -108,6 +119,7 @@ int rudp_event_handler(rudp_socket_t rsocket,
  */
 
 int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6* to) {
+	
 	return 0;
 }
 
