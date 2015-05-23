@@ -68,6 +68,8 @@ rudp_socket_t rudp_socket(int port) {
 
 		rudp_socket_t rudp_socket = (rudp_socket_t) s;
 
+		socket_open = 1;
+
 		return rudp_socket;
 	}
 	else{
