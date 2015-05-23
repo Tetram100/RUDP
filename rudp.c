@@ -48,6 +48,8 @@ int send_packet(rudp_socket_t rsocket, struct send_packet packet);
 int setTimeOut(struct send_packet packet);
 int retransmit(int fd, void *arg);
 int receive_SYN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive);
+int receive_FIN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive)
+
 struct list_packet* add_list(struct list_packet *list, struct send_packet packet_to_send);
 struct list_packet* remove_head_list(struct list_packet *list);
 
@@ -267,11 +269,11 @@ int receivePacketCallback(int fd, void *arg) {
 
     switch(rudp_receive.header.type) {
     	case RUDP_DATA:
-
+    		//TODO
     		return;
 
     	case RUDP_ACK:
-
+    		//TODO
     		return;
 
     	case RUDP_SYN:
@@ -279,11 +281,15 @@ int receivePacketCallback(int fd, void *arg) {
     		return;
 
     	case RUDP_FIN:
-
+    		receive_FIN(rudp_socket, rudp_receive);
     		return;
 
     }
 }
+
+/*
+ * Functions to call depending on the type of the received packet.
+ */
 
 int receive_SYN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
 	
@@ -310,11 +316,59 @@ int receive_SYN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
 			return 0;
 
 		default:
-			return 0;
+			printf("Receive a SYN packet unexpectedly.\n");
+			return -1
 	}
 }
 
+int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
 
+	switch(state){
+		case SYN_SENT:
+			// TODO déclencher l'envoi des paquets qui ont été mis dans le buffer.
+
+		case DATA_TRANSFER:
+			// TODO changer la valeur de window. déclencher l'envoi des paquets dans le buffer.
+
+		case WAIT_FIN_ACK:
+			state = CLOSED;
+
+		default:
+			printf("Receive an ACK packet unexpectedly.\n");
+			return -1
+	}
+}
+
+int receive_FIN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
+	struct rudp_packet_t ack_packet;
+	switch(state){
+		case DATA_TRANSFER:
+			// send ACK
+			ack_packet.header.version = RUDP_VERSION;
+			ack_packet.header.type = RUDP_ACK;
+
+			// The sequence number of the packet which ACK a packet FIN is the same as the last received data packet
+			// (the same as the FIN packet received).
+			ack_number = rudp_receive.header.seqno;
+
+			ack_packet.header.seqno = ack_number;
+			
+			struct send_packet packet;
+			packet.rudp_packet = ack_packet;
+			packet.len = 8;
+			packet.counter = 0;
+
+			send_packet(rudp_socket, packet);
+
+			// TODO faut-il faire plus que ça avant de passer dans l'état closed ?
+			state = CLOSED;
+			return 0;
+
+		default:
+			printf("Receive a FIN packet unexpectedly.\n");
+			return -1;
+	}
+}
 
 
 /*
