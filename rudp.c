@@ -153,7 +153,7 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
     	return -1;	
 	}
 
-	if (state == CLOSED || state == WAIT_BUFFER || WAIT_FIN_ACK){
+	if (state == CLOSED || state == WAIT_BUFFER || state == WAIT_FIN_ACK){
 	    printf("Try to send packet in a wrong state\n");
     	return -1;			
 	} else if (state == LISTEN){
@@ -165,11 +165,11 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
 		syn_packet.header.seqno = sequence_number;
 		destination = to;
 
-		window = window - 1;
         if (sendto((int) rsocket, (void *) &syn_packet, sizeof (struct rudp_packet_t), 0, (struct sockaddr_in6*) &to, sizeof (struct sockaddr_in6)) < 0) {
             printf("Failed to send SYN packet\n");
             return -1;
         }
+        window = window - 1;
         state = SYN_SENT;
 	}
 
@@ -195,11 +195,11 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
 }
 
 int send_packet(rudp_socket_t rsocket, struct send_packet packet){
-	window = window -1;
 	if (sendto((int) rsocket, (void *) &packet, packet.len, 0, (struct sockaddr_in6*) destination, sizeof (struct sockaddr_in6)) < 0) {
 		printf("Failed to send SYN packet\n");
 		return -1;
 	}
+	window = window -1;
 	packet.counter++;
 	setTimeOut(packet);
 	return 0;	
