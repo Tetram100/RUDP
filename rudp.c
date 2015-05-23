@@ -85,7 +85,7 @@ rudp_socket_t rudp_socket(int port) {
 	}
 	else{
 		printf("A socket has already been opened\n");
-		return NULL
+		return NULL;
 	}
 }
 
