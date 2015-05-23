@@ -18,6 +18,12 @@
 #include "getaddr.h"
 #include "sockaddr6.h"
 
+#define LISTEN 0
+#define SYN_SENT 1
+#define DATA_TRANSFER 2
+#define WAIT_BUFFER 3
+#define WAIT_FIN_ACK 4
+#define CLOSED 5
 
 struct rudp_packet_t {
     struct rudp_hdr header;
@@ -34,6 +40,8 @@ int (*handler_event)(rudp_socket_t, rudp_event_t, struct sockaddr_in6 *);
 int socket_open = 0;
 int receive_set = 0;
 int event_set = 0;
+
+int state;
 
 /* 
  * rudp_socket: Create a RUDP socket. 
@@ -65,6 +73,9 @@ rudp_socket_t rudp_socket(int port) {
 			printf("Error while registering the callback function of the socket.\n");
 			return NULL;
 		}
+
+		// State of the socket set at LISTEN
+		state = LISTEN;
 
 		rudp_socket_t rudp_socket = (rudp_socket_t) s;
 
