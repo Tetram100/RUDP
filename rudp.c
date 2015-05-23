@@ -12,8 +12,6 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#include <time.h>
-
 #include "event.h"
 #include "rudp.h"
 #include "rudp_api.h"
@@ -26,7 +24,7 @@ struct rudp_packet_t {
     char data[RUDP_MAXPKTSIZE];
 } __attribute__((packed));
 
-int receiveDataCallback(int fd, void *arg);
+int receivePacketCallback(int fd, void *arg);
 
 // TODO Question : est-ce que avoir des variables globales suffit dans notre cas ? -> on n'est censé ne gérer qu'une seule socket par programme.
 //		utililsation d'un flag qui dit si une fonction à déjà été enregistré pour ce programme et du coup refuse d'en changer? 
@@ -34,6 +32,8 @@ int receiveDataCallback(int fd, void *arg);
 int (*handler_receive)(rudp_socket_t, struct sockaddr_in6 *, void *, int);
 int (*handler_event)(rudp_socket_t, rudp_event_t, struct sockaddr_in6 *);
 int socket_open = 0;
+int receive_set = 0;
+int event_set = 0;
 
 /* 
  * rudp_socket: Create a RUDP socket. 
@@ -49,18 +49,10 @@ rudp_socket_t rudp_socket(int port) {
 			return 0;
 		}
 
-		int p = port;
-
-		// if port = 0, the function should choose randomly a port number.
-		if(p == 0){
-			srand(time(NULL));
-			p = rand()%60000 + 5000; // port between 5000 and 65000
-		}
-
 		struct sockaddr_in s_receiver;
 		s_receiver.sin_family = AF_INET;
 		s_receiver.sin_addr.s_addr = htonl(INADDR_ANY);
-		s_receiver.sin_port = htons(p);
+		s_receiver.sin_port = htons(port);
 
 		if(bind(s, (struct sockaddr *) &s_receiver, sizeof(s_receiver)) == -1)
 		{
@@ -69,7 +61,7 @@ rudp_socket_t rudp_socket(int port) {
 		}
 
 
-		if(event_fd(s,receiveDataCallback, s, "receiveDataCallback") < 0) {
+		if(event_fd(s, receivePacketCallback, s, "receivePacketCallback") < 0) {
 			printf("Error while registering the callback function of the socket.\n");
 			return NULL;
 		}
@@ -89,6 +81,7 @@ rudp_socket_t rudp_socket(int port) {
  */ 
 
 int rudp_close(rudp_socket_t rsocket) {
+
 	return 0;
 }
 
@@ -99,8 +92,15 @@ int rudp_close(rudp_socket_t rsocket) {
 int rudp_recvfrom_handler(rudp_socket_t rsocket, 
 			  int (*handler)(rudp_socket_t, struct sockaddr_in6 *, 
 					 void *, int)) {
-	handler_receive = handler;
-	return 0;
+	if(receive_set != 1){
+		handler_receive = handler;
+		receive_set = 1;
+		return 0;
+	}
+	else{
+		return 1;
+	}
+	
 }
 
 /* 
@@ -109,8 +109,12 @@ int rudp_recvfrom_handler(rudp_socket_t rsocket,
 int rudp_event_handler(rudp_socket_t rsocket, 
 		       int (*handler)(rudp_socket_t, rudp_event_t, 
 				      struct sockaddr_in6 *)) {
-	handler_event = handler;
-	return 0;
+	if(event_set != 1){
+		handler_event = handler;
+		event_set = 1;
+		return 0;
+	}
+	return 1;
 }
 
 
@@ -123,7 +127,7 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
 	return 0;
 }
 
-int receiveDataCallback(int fd, void *arg) {
+int receivePacketCallback(int fd, void *arg) {
 
 	rudp_socket_t *rudp_socket = (rudp_socket_t*) arg;
 
@@ -152,16 +156,13 @@ int receiveDataCallback(int fd, void *arg) {
 
     	case RUDP_ACK:
 
-
     		return;
 
     	case RUDP_SYN:
 
-
     		return;
 
     	case RUDP_FIN:
-
 
     		return;
 
