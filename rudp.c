@@ -422,16 +422,26 @@ int receivePacketCallback(int fd, void *arg) {
  			if(rudp_receive.header.seqno == ((((list_waiting_ack->packet).rudp_packet)->header).seqno) + 1){
  				event_timeout_delete(&retransmit, &(list_waiting_ack->packet));
  				remove_head_list(list_waiting_ack);
- 				window += 1;
+ 				if(window < RUDP_WINDOW){
+ 					window += 1;
+ 				}
  				send_buffer(rudp_socket);
  				return 0;
  			}
  			if(rudp_receive.header.seqno > ((((list_waiting_ack->packet).rudp_packet)->header).seqno) + 1){
  				int numb = get_number_packets_acked(rudp_receive.header.seqno);
+ 				int window_temp = window;
+
  				while(numb > 0){
  					remove_head_list(list_waiting_ack);
- 					window += 1;
+ 					window_temp += 1;
  					numb -= 1;
+ 				}
+ 				if(window_temp > RUDP_WINDOW){
+ 					window = RUDP_WINDOW;
+ 				}
+ 				else{
+ 					window = window_temp;
  				}
  				return 0;
  			} 
