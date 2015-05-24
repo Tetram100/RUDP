@@ -33,7 +33,7 @@ struct rudp_packet_t {
 
 struct send_packet {
 	struct rudp_packet_t* rudp_packet;
-	struct rudp_socket_t* rudp_socket;
+	rudp_socket_t rudp_socket;
 	int len;
 	int counter;
 };
@@ -47,16 +47,17 @@ struct list_packet{
 int receivePacketCallback(int fd, void *arg);
 int send_packet(rudp_socket_t rsocket, struct send_packet* packet);
 int setTimeOut(struct send_packet* packet);
-int retransmit(int fd, void *arg);
+int retransmit(void *arg);
 int receive_SYN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, struct sockaddr_in6* sender);
 int receive_FIN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive);
+int send_buffer(rudp_socket_t rsocket);
 
 struct list_packet* add_list(struct list_packet *list, struct send_packet packet_to_send);
 struct list_packet* remove_head_list(struct list_packet *list);
 
 // TODO Question : est-ce que avoir des variables globales suffit dans notre cas ? -> on n'est censé ne gérer qu'une seule socket par programme.
 //		utililsation d'un flag qui dit si une fonction à déjà été enregistré pour ce programme et du coup refuse d'en changer? 
-// ---> mieux : flag pour dire qu'une socket à déjà était ouverte, et du coup on renvoit un NULL
+// ---> mieux : flag pour dire qu'une socket à déjà était ouverte, et du coup on renvoie un NULL
 int (*handler_receive)(rudp_socket_t, struct sockaddr_in6 *, void *, int);
 int (*handler_event)(rudp_socket_t, rudp_event_t, struct sockaddr_in6 *);
 int socket_open = 0;
@@ -67,10 +68,12 @@ int state = 0;
 u_int32_t sequence_number = 0;
 u_int32_t ack_number =0;
 int window = RUDP_WINDOW;
-struct sockaddr_in6* destination;
+struct sockaddr_in6* destination = NULL;
 
 struct list_packet *list_to_send = NULL;
 int numb_packet_to_send = 0;
+
+struct list_packet *list_waiting_ack = NULL;
 
 /* 
  * rudp_socket: Create a RUDP socket. 
@@ -98,7 +101,7 @@ int numb_packet_to_send = 0;
  		}
 
 
- 		if(event_fd(s, receivePacketCallback, s, "receivePacketCallback") < 0) {
+ 		if(event_fd(s, receivePacketCallback, (void*) &s, "receivePacketCallback") < 0) {
  			printf("Error while registering the callback function of the socket.\n");
  			return NULL;
  		}
@@ -106,7 +109,7 @@ int numb_packet_to_send = 0;
 		// State of the socket set at LISTEN
  		state = LISTEN;
 
-		// attention à cette ligne
+		// TODO attention à cette ligne
  		rudp_socket_t rudp_socket = &s;
 
  		socket_open = 1;
@@ -174,7 +177,10 @@ int numb_packet_to_send = 0;
  	if (state == CLOSED || state == WAIT_BUFFER || state == WAIT_FIN_ACK){
  		printf("Try to send packet in a wrong state\n");
  		return -1;			
- 	} else if (state == LISTEN){
+ 	}
+
+ 	// The first time sendto is called we send a SYN packet.
+ 	if (state == LISTEN){
  		struct rudp_packet_t syn_packet;
  		syn_packet.header.version = RUDP_VERSION;
  		syn_packet.header.type = RUDP_SYN;
@@ -185,7 +191,7 @@ int numb_packet_to_send = 0;
 
  		struct send_packet syn_packet_send;
   		syn_packet_send.rudp_packet = &syn_packet;
- 		syn_packet_send.rudp_socket = &rsocket;
+ 		syn_packet_send.rudp_socket = rsocket;
  		syn_packet_send.len = sizeof (struct rudp_hdr);
  		syn_packet_send.counter = 0;		
 
@@ -198,27 +204,38 @@ int numb_packet_to_send = 0;
  	struct rudp_packet_t data_packet;
  	data_packet.header.version = RUDP_VERSION;
  	data_packet.header.type = RUDP_DATA;
+
+ 	sequence_number = sequence_number + 1;
+ 	data_packet.header.seqno = sequence_number;
+
  	memcpy(data_packet.data, data, len);
 
 	// We save the packet
  	struct send_packet packet;
  	packet.rudp_packet = &data_packet;
- 	packet.rudp_socket = &rsocket;
+ 	packet.rudp_socket = rsocket;
  	packet.len = len + sizeof (struct rudp_hdr);
  	packet.counter = 0;
 
- 	if (window > 0) {
+ 	/*if (window > 0) {
  		send_packet(rsocket, &packet);
  	} else {
 		// Add the packet to the list of packet waiting to be sent.
  		list_to_send = add_list(list_to_send, packet);
+ 	}*/
+
+ 	// We store the packet in the sending buffer. The function which sends the packet will be called each time we receive an ACK.
+ 	list_to_send = add_list(list_to_send, packet);
+
+ 	if(state == DATA_TRANSFER){
+ 		send_buffer(rsocket);
  	}
 
  	return 0;
  }
 
  int send_packet(rudp_socket_t rsocket, struct send_packet* packet){
- 	if (sendto(*rsocket, (void *) packet->rudp_packet, packet->len, 0, destination, sizeof(struct sockaddr_in6)) < 0) {
+ 	if (sendto(*((int*)rsocket), (void *) packet->rudp_packet, packet->len, 0, (struct sockaddr*) destination, sizeof(struct sockaddr_in6)) < 0) {
  		printf("Failed to send packet\n");
  		return -1;
  	}
@@ -230,14 +247,26 @@ int numb_packet_to_send = 0;
  	return 0;	
  }
 
-// ATTENTION : retransmit n'a pas les bons arguments (voir la défintion de la fonction event_timeout)
- int retransmit(int fd, void *arg){
+ // This function is called when an ack is received. It checks if there are packets in the sending buffer, and sends as many packets as possible,
+ // until the sending window is empty or there are no more packet in the buffer.
+ int send_buffer(rudp_socket_t rsocket){
+
+ 	while(list_to_send != NULL && window > 0){
+ 		list_waiting_ack = add_list(list_waiting_ack, list_to_send->packet);
+ 		send_packet(rsocket, &(list_waiting_ack->packet));
+ 		list_to_send = remove_head_list(list_to_send);
+ 		window = window - 1;
+ 	}
+ 	return 0;
+ }
+
+ int retransmit(void *arg){
  	struct send_packet* packet = (struct send_packet*) arg;
 
  	if (packet->counter >= RUDP_MAXRETRANS){
- 		handler_event((rudp_socket_t*)packet->rudp_socket, RUDP_EVENT_TIMEOUT, destination);
+ 		handler_event(packet->rudp_socket, RUDP_EVENT_TIMEOUT, destination);
  	} else {
- 		if (sendto((rudp_socket_t*)packet->rudp_socket, (void *) packet->rudp_packet, packet->len, 0, destination, sizeof(struct sockaddr_in6)) < 0) {
+ 		if (sendto(*((int*)packet->rudp_socket), (void *) packet->rudp_packet, packet->len, 0, (struct sockaddr*) destination, sizeof(struct sockaddr_in6)) < 0) {
  			printf("Failed to send retransmit packet\n");
  			return -1;
  		} 		
@@ -270,7 +299,7 @@ int receivePacketCallback(int fd, void *arg) {
 	struct rudp_packet_t rudp_receive;
 	memset(&rudp_receive, 0x0, sizeof(struct rudp_packet_t));
 
-	int bytes = recvfrom(fd, &rudp_receive, sizeof (rudp_receive), 0, (struct sockaddr_in6*) &sender, (socklen_t*) & addr_size);
+	int bytes = recvfrom((int) fd, (void*)&rudp_receive, sizeof (rudp_receive), 0, (struct sockaddr*) &sender, (socklen_t*) &addr_size);
 
     //Verifications
 	if (bytes <=0){
@@ -285,20 +314,23 @@ int receivePacketCallback(int fd, void *arg) {
 	switch(rudp_receive.header.type) {
 		case RUDP_DATA:
     		//TODO
-		return;
+		return 0;
 
 		case RUDP_ACK:
     		//TODO
-		return;
+		return 0;
 
 		case RUDP_SYN:
-		receive_SYN(rudp_socket, rudp_receive, &sender);
-		return;
+			receive_SYN(rudp_socket, rudp_receive, &sender);
+		return 0;
 
 		case RUDP_FIN:
-		receive_FIN(rudp_socket, rudp_receive);
-		return;
+			receive_FIN(rudp_socket, rudp_receive);
+		return 0;
 
+		default:
+			printf("Wrong Type packet\n");
+			return -1;
 	}
 }
 
@@ -319,12 +351,13 @@ int receivePacketCallback(int fd, void *arg) {
  			ack_packet.header.type = RUDP_ACK;
 
  			ack_number = rudp_receive.header.seqno + 1;
+ 			sequence_number = (rand() % (u_int32_t)pow(2,32)) + 1; // in case we need to send data as well.
 
  			ack_packet.header.seqno = ack_number;
 
  			struct send_packet packet;
  			packet.rudp_packet = &ack_packet;
- 			packet.rudp_socket = &rudp_socket;
+ 			packet.rudp_socket = rudp_socket;
  			packet.len = sizeof (struct rudp_hdr);
  			packet.counter = 0;
 
@@ -339,17 +372,41 @@ int receivePacketCallback(int fd, void *arg) {
  	}
  }
 
+ int receive_DATA(){
+ 	switch(state){
+ 		case DATA_TRANSFER:
+ 			return 0;
+ 		default:
+ 			printf("Receive a DATA packet unexpectedly.\n");
+ 			return -1;
+ 	}
+ }
+
  int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
 
  	switch(state){
  		case SYN_SENT:
 			// TODO déclencher l'envoi des paquets qui ont été mis dans le buffer.
 			//Remove the time_out event for the syn
+ 			if(rudp_receive.header.seqno == (list_to_send->packet.rudp_packet->header.seqno)){
+ 				state = DATA_TRANSFER;
+ 				send_buffer(rudp_socket);
+ 				return 0;
+ 			}
+ 			else{
+ 				printf("Receive an ACK packet with wrong seq number.\n");
+ 				return -1;
+ 			}
+
  		case DATA_TRANSFER:
 			// TODO changer la valeur de window. déclencher l'envoi des paquets dans le buffer.
 			// Remove the timeout event for the packets ack
+ 			return 0;
+
  		case WAIT_FIN_ACK:
+ 			// TODO appeler fonction qui close la socket.
  			state = CLOSED;
+ 			return 0;
 
  		default:
  			printf("Receive an ACK packet unexpectedly.\n");
@@ -359,6 +416,7 @@ int receivePacketCallback(int fd, void *arg) {
 
  int receive_FIN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  	struct rudp_packet_t ack_packet;
+ 	struct send_packet packet;
  	switch(state){
  		case DATA_TRANSFER:
 			// send ACK
@@ -371,9 +429,9 @@ int receivePacketCallback(int fd, void *arg) {
 
  			ack_packet.header.seqno = ack_number;
 
- 			struct send_packet packet;
+ 			
  			packet.rudp_packet = &ack_packet;
- 			packet.rudp_socket = &rudp_socket;
+ 			packet.rudp_socket = rudp_socket;
  			packet.len = sizeof (struct rudp_hdr);
  			packet.counter = 0;
 
@@ -391,10 +449,12 @@ int receivePacketCallback(int fd, void *arg) {
 
 
 /*
- * Functions to manipulate liste_packet
+ * Functions to manipulate list_packet
  */
 
 // Add the packet at the end of the list.
+ // TODO passer un pointeur sur le paquet ?
+
  struct list_packet* add_list(struct list_packet *list, struct send_packet packet_to_send){
  	struct list_packet *new_element = malloc(sizeof(struct list_packet));
 
