@@ -48,12 +48,15 @@ int receivePacketCallback(int fd, void *arg);
 int send_packet(rudp_socket_t rsocket, struct send_packet* packet);
 int setTimeOut(struct send_packet* packet);
 int retransmit(void *arg);
+int receive_DATA(); // TODO changer le prototype.
+int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive);
 int receive_SYN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, struct sockaddr_in6* sender);
 int receive_FIN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive);
 int send_buffer(rudp_socket_t rsocket);
 
 struct list_packet* add_list(struct list_packet *list, struct send_packet packet_to_send);
 struct list_packet* remove_head_list(struct list_packet *list);
+int get_number_packets_acked(u_int32_t ack_numb_received);
 
 // TODO Question : est-ce que avoir des variables globales suffit dans notre cas ? -> on n'est censé ne gérer qu'une seule socket par programme.
 //		utililsation d'un flag qui dit si une fonction à déjà été enregistré pour ce programme et du coup refuse d'en changer? 
@@ -193,9 +196,11 @@ struct list_packet *list_waiting_ack = NULL;
   		syn_packet_send.rudp_packet = &syn_packet;
  		syn_packet_send.rudp_socket = rsocket;
  		syn_packet_send.len = sizeof (struct rudp_hdr);
- 		syn_packet_send.counter = 0;		
+ 		syn_packet_send.counter = 0;
 
- 		send_packet(rsocket, &syn_packet_send);
+ 		list_waiting_ack = add_list(list_waiting_ack, syn_packet_send);	
+
+ 		send_packet(rsocket, &(list_waiting_ack->packet));
 
  		state = SYN_SENT;
  	}
@@ -234,6 +239,8 @@ struct list_packet *list_waiting_ack = NULL;
  	return 0;
  }
 
+
+ // TODO faire une fonction différente pour envoyer les ACK (pas de timeout) ?
  int send_packet(rudp_socket_t rsocket, struct send_packet* packet){
  	if (sendto(*((int*)rsocket), (void *) packet->rudp_packet, packet->len, 0, (struct sockaddr*) destination, sizeof(struct sockaddr_in6)) < 0) {
  		printf("Failed to send packet\n");
@@ -287,7 +294,7 @@ struct list_packet *list_waiting_ack = NULL;
 	}
 
 	return 0;
-}
+ }
 
 int receivePacketCallback(int fd, void *arg) {
 
@@ -317,7 +324,7 @@ int receivePacketCallback(int fd, void *arg) {
 		return 0;
 
 		case RUDP_ACK:
-    		//TODO
+    		receive_ACK(rudp_socket, rudp_receive);
 		return 0;
 
 		case RUDP_SYN:
@@ -332,7 +339,7 @@ int receivePacketCallback(int fd, void *arg) {
 			printf("Wrong Type packet\n");
 			return -1;
 	}
-}
+ }
 
 /*
  * Functions to call depending on the type of the received packet.
@@ -372,9 +379,11 @@ int receivePacketCallback(int fd, void *arg) {
  	}
  }
 
+ // TODO changer le prototype une fois les paramètres mis au point.
  int receive_DATA(){
  	switch(state){
  		case DATA_TRANSFER:
+ 			// TODO
  			return 0;
  		default:
  			printf("Receive a DATA packet unexpectedly.\n");
@@ -386,11 +395,16 @@ int receivePacketCallback(int fd, void *arg) {
 
  	switch(state){
  		case SYN_SENT:
-			// TODO déclencher l'envoi des paquets qui ont été mis dans le buffer.
-			//Remove the time_out event for the syn
- 			if(rudp_receive.header.seqno == (list_to_send->packet.rudp_packet->header.seqno)){
+			
+			//TODO expression bien sale dans le if, à vérifier qu'il n'y ait pas d'erreur de syntaxe.
+ 			if(rudp_receive.header.seqno == ((((list_waiting_ack->packet).rudp_packet)->header).seqno) + 1){
+ 				// Delete the timeout for the SYN packet.
+ 				event_timeout_delete(&retransmit, &(list_waiting_ack->packet));
+ 				remove_head_list(list_waiting_ack);
  				state = DATA_TRANSFER;
+ 				// Send as many as possible packet (if packets are wainting + window).
  				send_buffer(rudp_socket);
+
  				return 0;
  			}
  			else{
@@ -401,7 +415,27 @@ int receivePacketCallback(int fd, void *arg) {
  		case DATA_TRANSFER:
 			// TODO changer la valeur de window. déclencher l'envoi des paquets dans le buffer.
 			// Remove the timeout event for the packets ack
- 			return 0;
+ 			if(rudp_receive.header.seqno < ((((list_waiting_ack->packet).rudp_packet)->header).seqno) + 1){
+ 				printf("Receive an ACK packet with an old seq number.\n");
+ 				return -1;
+ 			}
+ 			if(rudp_receive.header.seqno == ((((list_waiting_ack->packet).rudp_packet)->header).seqno) + 1){
+ 				event_timeout_delete(&retransmit, &(list_waiting_ack->packet));
+ 				remove_head_list(list_waiting_ack);
+ 				window += 1;
+ 				send_buffer(rudp_socket);
+ 				return 0;
+ 			}
+ 			if(rudp_receive.header.seqno > ((((list_waiting_ack->packet).rudp_packet)->header).seqno) + 1){
+ 				int numb = get_number_packets_acked(rudp_receive.header.seqno);
+ 				while(numb > 0){
+ 					remove_head_list(list_waiting_ack);
+ 					window += 1;
+ 					numb -= 1;
+ 				}
+ 				return 0;
+ 			} 
+ 			return -1;
 
  		case WAIT_FIN_ACK:
  			// TODO appeler fonction qui close la socket.
@@ -489,4 +523,18 @@ int receivePacketCallback(int fd, void *arg) {
  		printf("List empty.\n");
  		return NULL;
  	}
+ }
+
+ // Calculate the number of packet that have been acked.
+ int get_number_packets_acked(u_int32_t ack_numb_received){
+ 	int numb_packet = 0;
+
+ 	struct list_packet *temp = list_waiting_ack;
+
+ 	while((temp->packet.rudp_packet->header.seqno + 1) <= ack_numb_received){
+ 		numb_packet += 1;
+ 		temp = temp->next_packet;
+ 	}
+
+ 	return numb_packet;
  }
