@@ -481,6 +481,7 @@ int receive_DATA(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, i
 
  				ack_packet.header.version = RUDP_VERSION;
  				ack_packet.header.type = RUDP_ACK;
+ 				ack_packet.header.seqno = ack_number;
 
  				struct send_packet packet;
  				packet.rudp_packet = &ack_packet;
