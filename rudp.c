@@ -83,6 +83,9 @@ u_int32_t ack_number =0;
 int window = RUDP_WINDOW;
 struct sockaddr_in6* destination = NULL;
 
+u_int32_t initial_seq_number = 0;
+u_int32_t initial_ack_number = 0;
+
 // Packets waiting to be send to the receiver.
 struct list_packet *list_to_send = NULL;
 int numb_packet_to_send = 0;
@@ -109,10 +112,13 @@ rudp_socket_t rudp_socket(int port) {
  			return NULL;
  		}
 
- 		struct sockaddr_in s_receiver;
- 		s_receiver.sin_family = AF_INET;
- 		s_receiver.sin_addr.s_addr = htonl(INADDR_ANY);
- 		s_receiver.sin_port = htons(port);
+ 		struct sockaddr_in6 s_receiver;
+
+ 		s_receiver.sin6_family = AF_INET6;
+ 		s_receiver.sin6_flowinfo = 0;
+ 		// s_receiver.sin6_addr.s6_addr = htonl(INADDR_ANY);
+ 		s_receiver.sin6_addr = in6addr_any;
+ 		s_receiver.sin6_port = htons(port);
 
  		if(bind(s, (struct sockaddr *) &s_receiver, sizeof(s_receiver)) == -1)
  		{
@@ -408,16 +414,17 @@ int receive_SYN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, st
 int receive_DATA(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, int bytes){
 
  	struct rudp_packet_t ack_packet;
- 	struct send_packet packet;;
+ 	struct send_packet packet;
 
  	switch(state){
  		case DATA_TRANSFER:
- 			// TODO send ack, update ack number, make the difference between the packet we have already received (just resend the ack with the actual ack) and the others,
+ 			// send ack, update ack number, make the difference between the packet we have already received (just resend the ack with the actual ack) and the others,
  			// send the packet to the application through the handler function, store and reorganize if wrong order.
  			if(rudp_receive.header.seqno < ack_number){
  				// We have already received the packet. Acknowledge with the current ack_number.
  				ack_packet.header.version = RUDP_VERSION;
  				ack_packet.header.type = RUDP_ACK;
+ 				ack_packet.header.seqno = ack_number;
  				
  				packet.rudp_packet = &ack_packet;
  				packet.rudp_socket = rudp_socket;
@@ -429,8 +436,8 @@ int receive_DATA(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, i
  			}
 
  			if(rudp_receive.header.seqno == ack_number){
- 				// The packet is the one we expected next. We check if the buffer for arriving packet is empty. If not, we send all the pocket
- 				// which seq numbers following each others to the application. We ack the last packet sent to the application.
+ 				// The packet is the one we expected next. We check if the buffer for arriving packet is empty. If not, we send all the packets
+ 				// which seq numbers follows each others to the application. We ack the last packet sent to the application.
 
  				// Send the packet we just received to the application.
  				handler_receive(rudp_socket, destination, (void*) rudp_receive.data, bytes - (int) sizeof(struct rudp_hdr));
@@ -446,17 +453,17 @@ int receive_DATA(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, i
  						temp = temp->next_packet;
  						list_buffer_to_app = remove_head_list(list_buffer_to_app);
  					}
-
- 					ack_packet.header.version = RUDP_VERSION;
-	 				ack_packet.header.type = RUDP_ACK;
-
-	 				packet.rudp_packet = &ack_packet;
-	 				packet.rudp_socket = rudp_socket;
-	 				packet.len = sizeof (struct rudp_hdr);
-	 				packet.counter = 0;
-
-	 				send_ack(rudp_socket, &packet);	
  				}
+ 				ack_packet.header.version = RUDP_VERSION;
+	 			ack_packet.header.type = RUDP_ACK;
+	 			ack_packet.header.seqno = ack_number;
+
+	 			packet.rudp_packet = &ack_packet;
+	 			packet.rudp_socket = rudp_socket;
+	 			packet.len = sizeof (struct rudp_hdr);
+	 			packet.counter = 0;
+
+	 			send_ack(rudp_socket, &packet);	
  				return 0;
  			}
 
@@ -591,7 +598,7 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  			return -1;
 
  		case WAIT_FIN_ACK:
- 			if(rudp_receive.header.seqno == ((((list_waiting_ack->packet).rudp_packet)->header).seqno) + 1){
+ 			if(rudp_receive.header.seqno == (((list_waiting_ack->packet).rudp_packet)->header).seqno){
  				event_timeout_delete(&retransmit, &(list_waiting_ack->packet));
  				remove_head_list(list_waiting_ack);
  				state = CLOSED;
