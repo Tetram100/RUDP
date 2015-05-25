@@ -147,7 +147,7 @@ rudp_socket_t rudp_socket(int port) {
  */ 
 
 int rudp_close(rudp_socket_t rsocket) {
-
+ 	state = WAIT_BUFFER;
  	return 0;
 }
 
@@ -515,6 +515,7 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  			}
 
  		case DATA_TRANSFER:
+ 		case WAIT_BUFFER:
 			// changer la valeur de window. déclencher l'envoi des paquets dans le buffer.
 			// Remove the timeout event for the packets ack
  			//TODO expression bien sale dans le if, à vérifier qu'il n'y ait pas d'erreur de syntaxe.
@@ -530,6 +531,24 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  					window += 1;
  				}
  				send_buffer(rudp_socket);
+ 				if (state == WAIT_BUFFER && list_waiting_ack == NULL){
+ 					// We send the FIN packet
+ 					struct rudp_packet_t fin_packet;
+ 					struct send_packet packet;;
+ 					fin_packet.header.version = RUDP_VERSION;
+ 					fin_packet.header.type = RUDP_FIN;
+ 					sequence_number = sequence_number +1;
+ 					fin_packet.header.seqno = sequence_number;
+
+ 					packet.rudp_packet = &fin_packet;
+ 					packet.rudp_socket = rudp_socket;
+ 					packet.len = sizeof (struct rudp_hdr);
+ 					packet.counter = 0;
+
+ 					list_waiting_ack = add_list(list_waiting_ack, packet);	
+ 					send_packet(rudp_socket, &(list_waiting_ack->packet));
+ 					state = WAIT_FIN_ACK;				
+ 				}
  				return 0;
  			}
  			//TODO expression bien sale dans le if, à vérifier qu'il n'y ait pas d'erreur de syntaxe.
@@ -549,13 +568,35 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  					window = window_temp;
  				}
  				send_buffer(rudp_socket);
+ 				if (state == WAIT_BUFFER && list_waiting_ack == NULL){
+ 					// We send the FIN packet
+ 					struct rudp_packet_t fin_packet;
+ 					struct send_packet packet;
+ 					fin_packet.header.version = RUDP_VERSION;
+ 					fin_packet.header.type = RUDP_FIN;
+ 					sequence_number = sequence_number +1;
+ 					fin_packet.header.seqno = sequence_number;
+
+ 					packet.rudp_packet = &fin_packet;
+ 					packet.rudp_socket = rudp_socket;
+ 					packet.len = sizeof (struct rudp_hdr);
+ 					packet.counter = 0;
+
+ 					list_waiting_ack = add_list(list_waiting_ack, packet);	
+ 					send_packet(rudp_socket, &(list_waiting_ack->packet));
+ 					state = WAIT_FIN_ACK;				
+ 				}
  				return 0;
  			} 
  			return -1;
 
  		case WAIT_FIN_ACK:
- 			// TODO appeler fonction qui close la socket.
- 			state = CLOSED;
+ 			if(rudp_receive.header.seqno == ((((list_waiting_ack->packet).rudp_packet)->header).seqno) + 1){
+ 				event_timeout_delete(&retransmit, &(list_waiting_ack->packet));
+ 				remove_head_list(list_waiting_ack);
+ 				state = CLOSED;
+ 				handler_event(rudp_socket, RUDP_EVENT_CLOSED, NULL);
+ 			}
  			return 0;
 
  		default:
