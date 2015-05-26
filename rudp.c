@@ -76,6 +76,7 @@ int (*handler_event)(rudp_socket_t, rudp_event_t, struct sockaddr_in6 *);
 int socket_open = 0;
 int receive_set = 0;
 int event_set = 0;
+int s = -1;
 
 int state = 0;
 u_int32_t sequence_number = 0;
@@ -106,7 +107,7 @@ struct list_packet *list_buffer_to_app = NULL;
 rudp_socket_t rudp_socket(int port) {
 
  	if(socket_open != 1){
- 		int s = socket(AF_INET6, SOCK_DGRAM, 0);
+ 		s = socket(AF_INET6, SOCK_DGRAM, 0);
  		if(s==-1){
  			printf("Error while opening the socket. Stop sending.\n");
  			return NULL;
@@ -140,7 +141,7 @@ rudp_socket_t rudp_socket(int port) {
 
  		socket_open = 1;
  		printf("Socket is opened\n");
- 		return s;
+ 		return &s;
  	}
  	else{
  		printf("A socket has already been opened\n");
@@ -268,7 +269,7 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
 }
 
 int send_packet(rudp_socket_t rsocket, struct send_packet* packet){
- 	if (sendto(rsocket, (void *) packet->rudp_packet, packet->len, 0, (struct sockaddr*) destination, sizeof(struct sockaddr_in6)) < 0) {
+ 	if (sendto(*((int*)rsocket), (void *) packet->rudp_packet, packet->len, 0, (struct sockaddr*) destination, sizeof(struct sockaddr_in6)) < 0) {
  		perror("sendto failed");
  		printf("Failed to send packet\n");
  		return -1;
@@ -304,6 +305,8 @@ int send_buffer(rudp_socket_t rsocket){
 }
 
 int retransmit(void *arg){
+
+	printf("%p", arg);
  	struct send_packet* packet = (struct send_packet*) arg;
 
  	if (packet->counter >= RUDP_MAXRETRANS){
