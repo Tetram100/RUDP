@@ -275,6 +275,7 @@ int send_packet(rudp_socket_t rsocket, struct send_packet* packet){
  		return -1;
  	}
  	packet->counter++;
+ 	printf("%p\n",packet);
  	if (setTimeOut(packet) != 0){
  		return -1;
  	}
@@ -306,7 +307,7 @@ int send_buffer(rudp_socket_t rsocket){
 
 int retransmit(void *arg){
 
-	printf("%p", arg);
+	printf("%p\n", arg);
  	struct send_packet* packet = (struct send_packet*) arg;
 
  	if (packet->counter >= RUDP_MAXRETRANS){
