@@ -136,11 +136,11 @@ rudp_socket_t rudp_socket(int port) {
  		state = LISTEN;
 
 		// TODO attention à cette ligne
- 		rudp_socket_t rudp_socket = &s;
+ 		//rudp_socket_t rudp_socket = &s;
 
  		socket_open = 1;
-
- 		return rudp_socket;
+ 		printf("Socket is opened\n");
+ 		return s;
  	}
  	else{
  		printf("A socket has already been opened\n");
@@ -153,6 +153,7 @@ rudp_socket_t rudp_socket(int port) {
  */ 
 
 int rudp_close(rudp_socket_t rsocket) {
+	printf("close called from the program\n");
  	state = WAIT_BUFFER;
  	return 0;
 }
@@ -164,6 +165,7 @@ int rudp_close(rudp_socket_t rsocket) {
 int rudp_recvfrom_handler(rudp_socket_t rsocket, 
  	int (*handler)(rudp_socket_t, struct sockaddr_in6 *, 
  		void *, int)) {
+	printf("Recvfrom Handler set\n");
  	if(receive_set != 1){
  		handler_receive = handler;
  		receive_set = 1;
@@ -182,6 +184,7 @@ int rudp_recvfrom_handler(rudp_socket_t rsocket,
 int rudp_event_handler(rudp_socket_t rsocket, 
  	int (*handler)(rudp_socket_t, rudp_event_t, 
  		struct sockaddr_in6 *)) {
+	printf("Event Handler set\n");
  	if(event_set != 1){
  		handler_event = handler;
  		event_set = 1;
@@ -225,7 +228,7 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
  		list_waiting_ack = add_list(list_waiting_ack, syn_packet_send);	
 
  		send_packet(rsocket, &(list_waiting_ack->packet));
-
+ 		printf("SYN sent\n");
  		state = SYN_SENT;
  	}
 
@@ -265,11 +268,11 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
 }
 
 int send_packet(rudp_socket_t rsocket, struct send_packet* packet){
- 	if (sendto(*((int*)rsocket), (void *) packet->rudp_packet, packet->len, 0, (struct sockaddr*) destination, sizeof(struct sockaddr_in6)) < 0) {
+ 	if (sendto(rsocket, (void *) packet->rudp_packet, packet->len, 0, (struct sockaddr*) destination, sizeof(struct sockaddr_in6)) < 0) {
+ 		perror("sendto failed");
  		printf("Failed to send packet\n");
  		return -1;
  	}
- 	
  	packet->counter++;
  	if (setTimeOut(packet) != 0){
  		return -1;
@@ -282,16 +285,18 @@ int send_ack(rudp_socket_t rsocket, struct send_packet* packet_ack){
  		printf("Failed to send packet\n");
  		return -1;
  	}
+ 	printf("Ack sent");
  	return 0;
 }
 
 // This function is called when an ack is received. It checks if there are packets in the sending buffer, and sends as many packets as possible,
 // until the sending window is empty or there are no more packet in the buffer.
 int send_buffer(rudp_socket_t rsocket){
-
+	printf("Sending of the buffer\n");
  	while(list_to_send != NULL && window > 0){
  		list_waiting_ack = add_list(list_waiting_ack, list_to_send->packet);
  		send_packet(rsocket, &(list_waiting_ack->packet));
+ 		printf("Packet sent\n");
  		list_to_send = remove_head_list(list_to_send);
  		window = window - 1;
  	}
@@ -307,7 +312,8 @@ int retransmit(void *arg){
  		if (sendto(*((int*)packet->rudp_socket), (void *) packet->rudp_packet, packet->len, 0, (struct sockaddr*) destination, sizeof(struct sockaddr_in6)) < 0) {
  			printf("Failed to send retransmit packet\n");
  			return -1;
- 		} 		
+ 		}
+ 		printf("Packet retransmit\n");
  		packet->counter++;
  		if (setTimeOut(packet) != 0){
  			return -1;
@@ -323,7 +329,7 @@ int setTimeOut(struct send_packet* packet){
 		printf("Error while programming the time out callback\n");
 		return -1;
 	}
-
+	printf("Timeout set\n");
 	return 0;
 }
 
@@ -351,18 +357,22 @@ int receivePacketCallback(int fd, void *arg) {
 
 	switch(rudp_receive.header.type) {
 		case RUDP_DATA:
+			printf("DATA received\n");
     		receive_DATA(rudp_socket, rudp_receive, bytes);
 		return 0;
 
 		case RUDP_ACK:
+			printf("ACK received\n");
     		receive_ACK(rudp_socket, rudp_receive);
 		return 0;
 
 		case RUDP_SYN:
+			printf("SYN received\n");
 			receive_SYN(rudp_socket, rudp_receive, &sender);
 		return 0;
 
 		case RUDP_FIN:
+			printf("FIN received\n");
 			receive_FIN(rudp_socket, rudp_receive);
 		return 0;
 
@@ -655,6 +665,7 @@ int receive_FIN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
 // TODO passer un pointeur sur le paquet ?
 
 struct list_packet* add_list(struct list_packet *list, struct send_packet packet_to_send){
+	printf("Add element to list\n");
  	struct list_packet *new_element = malloc(sizeof(struct list_packet));
 
  	new_element -> packet = packet_to_send;
@@ -678,6 +689,7 @@ struct list_packet* add_list(struct list_packet *list, struct send_packet packet
 
 // Remove the head of the list.
 struct list_packet* remove_head_list(struct list_packet *list){
+	printf("Remove the head of the list\n");
  	if(list != NULL){
  		struct list_packet *to_return = list->next_packet;
  		free(list);
@@ -692,6 +704,7 @@ struct list_packet* remove_head_list(struct list_packet *list){
 
 // Return the number of packets that have been acked.
 int get_number_packets_acked(u_int32_t ack_numb_received){
+	printf("number of packets that have been acked\n");
  	int numb_packet = 0;
 
  	struct list_packet *temp = list_waiting_ack;
@@ -707,7 +720,7 @@ int get_number_packets_acked(u_int32_t ack_numb_received){
 
 // Insert the packet in the list, seq number following the ascending order.
 struct list_packet* insert_list_seq(struct list_packet *list, struct send_packet packet_received){
-
+	printf("Insert the packet in the list following seq number\n");
 	struct list_packet* return_list = list;
 
 	if(list != NULL){
