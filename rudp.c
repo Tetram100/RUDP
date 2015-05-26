@@ -519,6 +519,7 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  	switch(state){
  		case SYN_SENT:
 			
+			printf("Case SYN_SENT. RUDP number receive: %d. Compared with SYN number: %d + 1\n",rudp_receive.header.seqno,((((list_waiting_ack->packet).rudp_packet)->header).seqno))
 			//TODO expression bien sale dans le if, à vérifier qu'il n'y ait pas d'erreur de syntaxe.
  			if(rudp_receive.header.seqno == ((((list_waiting_ack->packet).rudp_packet)->header).seqno) + 1){
  				// Delete the timeout for the SYN packet.
@@ -534,6 +535,7 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  				printf("Receive an ACK packet with wrong seq number.\n");
  				return -1;
  			}
+ 			return -1;
 
  		case DATA_TRANSFER:
  		case WAIT_BUFFER:
