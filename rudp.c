@@ -450,10 +450,6 @@ int receive_SYN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, st
 
  			state = DATA_TRANSFER;
 
- 			if ( close_ask == 1){
- 				state = WAIT_BUFFER;
- 			}
-
  			return 0;
 
  		default:
@@ -570,6 +566,10 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  				event_timeout_delete(&retransmit, &(list_waiting_ack->packet));
  				remove_head_list(list_waiting_ack);
  				state = DATA_TRANSFER;
+ 				// If the closure has been ask
+ 				if ( close_ask == 1){
+ 					state = WAIT_BUFFER;
+ 				}
  				// Send as many packets as possible (if packets are wainting + window > 0).
  				send_buffer(rudp_socket);
 
