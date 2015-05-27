@@ -65,6 +65,7 @@ struct list_packet* add_list(struct list_packet *list, struct send_packet packet
 struct list_packet* remove_head_list(struct list_packet *list);
 int get_number_packets_acked(u_int32_t ack_numb_received);
 struct list_packet* insert_list_seq(struct list_packet *list, struct send_packet packet_received);
+struct send_packet* point_end_list(struct list_packet *list);
 
 /*
  * Global variables
@@ -259,6 +260,7 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
  		syn_packet_send.len = sizeof (struct rudp_hdr);
  		syn_packet_send.counter = 0;
 
+ 		printf("List waiting ack\n");
  		list_waiting_ack = add_list(list_waiting_ack, syn_packet_send);	
 
  		send_packet(rsocket, &(list_waiting_ack->packet));
@@ -269,7 +271,7 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
 	// We create the packet
  	struct rudp_packet_t data_packet;
  	data_packet.header.version = (RUDP_VERSION);
- 	data_packet.header.type = (RUDP_SYN);
+ 	data_packet.header.type = (RUDP_DATA);
 
  	sequence_number = sequence_number + 1;
  	data_packet.header.seqno = (sequence_number);
@@ -290,6 +292,7 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
  		list_to_send = add_list(list_to_send, packet);
  	}*/
 
+ 	printf("List to send\n");
  	// We store the packet in the sending buffer. The function which sends the packet will be called each time we receive an ACK.
  	list_to_send = add_list(list_to_send, packet);
 
@@ -308,7 +311,6 @@ int send_packet(rudp_socket_t rsocket, struct send_packet* packet){
  		return -1;
  	}
  	packet->counter++;
- 	printf("%p\n",packet);
  	if (setTimeOut(packet) != 0){
  		return -1;
  	}
@@ -320,7 +322,7 @@ int send_ack(rudp_socket_t rsocket, struct send_packet* packet_ack){
  		printf("Failed to send packet\n");
  		return -1;
  	}
- 	printf("Ack sent");
+ 	printf("Ack sent\n");
  	return 0;
 }
 
@@ -330,7 +332,7 @@ int send_buffer(rudp_socket_t rsocket){
 	printf("Sending of the buffer\n");
  	while(list_to_send != NULL && window > 0){
  		list_waiting_ack = add_list(list_waiting_ack, list_to_send->packet);
- 		send_packet(rsocket, &(list_waiting_ack->packet));
+ 		send_packet(rsocket, point_end_list(list_waiting_ack));
  		printf("Packet sent\n");
  		list_to_send = remove_head_list(list_to_send);
  		window = window - 1;
@@ -340,7 +342,6 @@ int send_buffer(rudp_socket_t rsocket){
 
 int retransmit(void *arg){
 
-	printf("%p\n", arg);
  	struct send_packet* packet = (struct send_packet*) arg;
 
  	if (packet->counter >= RUDP_MAXRETRANS){
@@ -568,7 +569,7 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  			if(rudp_receive.header.seqno == ack_rec + 1){
  				// Delete the timeout for the SYN packet.
  				event_timeout_delete(&retransmit, &(list_waiting_ack->packet));
- 				remove_head_list(list_waiting_ack);
+ 				list_waiting_ack = remove_head_list(list_waiting_ack);
  				state = DATA_TRANSFER;
  				// If the closure has been ask
  				if ( close_ask == 1){
@@ -597,13 +598,14 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  			//TODO expression bien sale dans le if, à vérifier qu'il n'y ait pas d'erreur de syntaxe.
  			if(rudp_receive.header.seqno == ack_rec + 1){
  				event_timeout_delete(&retransmit, &(list_waiting_ack->packet));
- 				remove_head_list(list_waiting_ack);
+ 				list_waiting_ack = remove_head_list(list_waiting_ack);
  				if(window < RUDP_WINDOW){
  					window += 1;
  				}
  				send_buffer(rudp_socket);
  				if (state == WAIT_BUFFER && list_waiting_ack == NULL){
  					// We send the FIN packet
+ 					printf("FIN sent\n");
  					struct rudp_packet_t fin_packet;
  					struct send_packet packet;;
  					fin_packet.header.version = (RUDP_VERSION);
@@ -616,6 +618,7 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  					packet.len = sizeof (struct rudp_hdr);
  					packet.counter = 0;
 
+ 					printf("List waiting ack\n");
  					list_waiting_ack = add_list(list_waiting_ack, packet);	
  					send_packet(rudp_socket, &(list_waiting_ack->packet));
  					state = WAIT_FIN_ACK;				
@@ -628,7 +631,7 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  				int window_temp = window;
 
  				while(numb > 0){
- 					remove_head_list(list_waiting_ack);
+ 					list_waiting_ack = remove_head_list(list_waiting_ack);
  					window_temp += 1;
  					numb -= 1;
  				}
@@ -641,6 +644,7 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  				send_buffer(rudp_socket);
  				if (state == WAIT_BUFFER && list_waiting_ack == NULL){
  					// We send the FIN packet
+ 					printf("FIN sent\n");
  					struct rudp_packet_t fin_packet;
  					struct send_packet packet;
  					fin_packet.header.version = (RUDP_VERSION);
@@ -653,6 +657,7 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  					packet.len = sizeof (struct rudp_hdr);
  					packet.counter = 0;
 
+ 					printf("List waiting ack\n");
  					list_waiting_ack = add_list(list_waiting_ack, packet);	
  					send_packet(rudp_socket, &(list_waiting_ack->packet));
  					state = WAIT_FIN_ACK;				
@@ -664,7 +669,7 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  		case WAIT_FIN_ACK:
  			if(rudp_receive.header.seqno == (((list_waiting_ack->packet).rudp_packet).header).seqno){
  				event_timeout_delete(&retransmit, &(list_waiting_ack->packet));
- 				remove_head_list(list_waiting_ack);
+ 				list_waiting_ack = remove_head_list(list_waiting_ack);
  				state = CLOSED;
  				handler_event(rudp_socket, RUDP_EVENT_CLOSED, NULL);
  			}
@@ -701,6 +706,7 @@ int receive_FIN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
 
 			// TODO faut-il faire plus que ça avant de passer dans l'état closed ?
  			state = CLOSED;
+ 			handler_event(rudp_socket, RUDP_EVENT_CLOSED, NULL); 			
  			return 0;
 
  		default:
@@ -718,13 +724,10 @@ int receive_FIN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
 // TODO passer un pointeur sur le paquet ?
 
 struct list_packet* add_list(struct list_packet *list, struct send_packet packet_to_send){
-	printf("Add element to list\n");
  	struct list_packet *new_element = malloc(sizeof(struct list_packet));
 
  	new_element -> packet = packet_to_send;
  	new_element -> next_packet = NULL;
-
- 	printf("UDP version restransmit %d\n", new_element->packet.rudp_packet.header.version);
 
  	if(list == NULL){
  		list = new_element;
@@ -817,4 +820,16 @@ struct list_packet* insert_list_seq(struct list_packet *list, struct send_packet
 		return_list = add_list(list, packet_received);
 	}
 	return return_list;
+}
+
+// Return the address of the packet at the end of the list.
+struct send_packet* point_end_list(struct list_packet *list){
+	struct send_packet* temp_return = &list->packet;
+	struct list_packet* temp = list->next_packet;
+	while(temp != NULL){
+		temp_return = &temp->packet;
+		temp = temp->next_packet;
+	}
+
+	return temp_return;
 }
