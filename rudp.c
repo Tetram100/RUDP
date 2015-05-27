@@ -246,11 +246,11 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
  	// The first time sendto is called we send a SYN packet.
  	if (state == LISTEN){
  		struct rudp_packet_t syn_packet;
- 		syn_packet.header.version = htons(RUDP_VERSION);
- 		syn_packet.header.type = htons(RUDP_SYN);
+ 		syn_packet.header.version = (RUDP_VERSION);
+ 		syn_packet.header.type = (RUDP_SYN);
 		// Plus 1 to avoid a 0 sequence number
  		sequence_number = (rand() % (u_int32_t)pow(2,32)) + 1;
- 		syn_packet.header.seqno = htonl(sequence_number);
+ 		syn_packet.header.seqno = (sequence_number);
  		destination = to;
 
  		struct send_packet syn_packet_send;
@@ -268,11 +268,11 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
 
 	// We create the packet
  	struct rudp_packet_t data_packet;
- 	data_packet.header.version = htons(RUDP_VERSION);
- 	data_packet.header.type = htons(RUDP_SYN);
+ 	data_packet.header.version = (RUDP_VERSION);
+ 	data_packet.header.type = (RUDP_SYN);
 
  	sequence_number = sequence_number + 1;
- 	data_packet.header.seqno = htonl(sequence_number);
+ 	data_packet.header.seqno = (sequence_number);
 
  	memcpy(data_packet.data, data, len);
 
@@ -432,13 +432,13 @@ int receive_SYN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, st
  			destination = sender;
 
 			// send ACK
- 			ack_packet.header.version = htons(RUDP_VERSION);
- 			ack_packet.header.type = htons(RUDP_ACK);
+ 			ack_packet.header.version = (RUDP_VERSION);
+ 			ack_packet.header.type = (RUDP_ACK);
 
- 			ack_number = ntohl(rudp_receive.header.seqno) + 1;
+ 			ack_number = (rudp_receive.header.seqno) + 1;
  			sequence_number = (rand() % (u_int32_t)pow(2,32)) + 1; // in case we need to send data as well.
 
- 			ack_packet.header.seqno = htonl(ack_number);
+ 			ack_packet.header.seqno = (ack_number);
 
  			struct send_packet packet;
  			packet.rudp_packet = &ack_packet;
@@ -463,7 +463,7 @@ int receive_DATA(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, i
 
  	struct rudp_packet_t ack_packet;
  	struct send_packet packet;
- 	u_int32_t seqno_rec = ntohl(rudp_receive.header.seqno);
+ 	u_int32_t seqno_rec = (rudp_receive.header.seqno);
 
  	switch(state){
  		case DATA_TRANSFER:
@@ -472,9 +472,9 @@ int receive_DATA(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, i
 
  			if(seqno_rec < ack_number){
  				// We have already received the packet. Acknowledge with the current ack_number.
- 				ack_packet.header.version = htons(RUDP_VERSION);
- 				ack_packet.header.type = htons(RUDP_ACK);
- 				ack_packet.header.seqno = htonl(ack_number);
+ 				ack_packet.header.version = (RUDP_VERSION);
+ 				ack_packet.header.type = (RUDP_ACK);
+ 				ack_packet.header.seqno = (ack_number);
  				
  				packet.rudp_packet = &ack_packet;
  				packet.rudp_socket = rudp_socket;
@@ -504,9 +504,9 @@ int receive_DATA(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, i
  						list_buffer_to_app = remove_head_list(list_buffer_to_app);
  					}
  				}
- 				ack_packet.header.version = htons(RUDP_VERSION);
-	 			ack_packet.header.type = htons(RUDP_ACK);
-	 			ack_packet.header.seqno = htonl(ack_number);
+ 				ack_packet.header.version = (RUDP_VERSION);
+	 			ack_packet.header.type = (RUDP_ACK);
+	 			ack_packet.header.seqno = (ack_number);
 
 	 			packet.rudp_packet = &ack_packet;
 	 			packet.rudp_socket = rudp_socket;
@@ -529,9 +529,9 @@ int receive_DATA(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, i
 
  				insert_list_seq(list_buffer_to_app, packet_to_insert);
 
- 				ack_packet.header.version = htons(RUDP_VERSION);
- 				ack_packet.header.type = htons(RUDP_ACK);
- 				ack_packet.header.seqno = htonl(ack_number);
+ 				ack_packet.header.version = (RUDP_VERSION);
+ 				ack_packet.header.type = (RUDP_ACK);
+ 				ack_packet.header.seqno = (ack_number);
 
  				struct send_packet packet;
  				packet.rudp_packet = &ack_packet;
@@ -553,7 +553,7 @@ int receive_DATA(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, i
 
 int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
 
-	u_int32_t ack_rec = ntohl((((list_waiting_ack->packet).rudp_packet)->header).seqno);
+	u_int32_t ack_rec = ((((list_waiting_ack->packet).rudp_packet)->header).seqno);
 
  	switch(state){
  		case SYN_SENT:
@@ -602,10 +602,10 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  					// We send the FIN packet
  					struct rudp_packet_t fin_packet;
  					struct send_packet packet;;
- 					fin_packet.header.version = htons(RUDP_VERSION);
- 					fin_packet.header.type = htons(RUDP_FIN);
+ 					fin_packet.header.version = (RUDP_VERSION);
+ 					fin_packet.header.type = (RUDP_FIN);
  					sequence_number = sequence_number + 1;
- 					fin_packet.header.seqno = htonl(sequence_number);
+ 					fin_packet.header.seqno = (sequence_number);
 
  					packet.rudp_packet = &fin_packet;
  					packet.rudp_socket = rudp_socket;
@@ -639,10 +639,10 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  					// We send the FIN packet
  					struct rudp_packet_t fin_packet;
  					struct send_packet packet;
- 					fin_packet.header.version = htons(RUDP_VERSION);
- 					fin_packet.header.type = htons(RUDP_FIN);
+ 					fin_packet.header.version = (RUDP_VERSION);
+ 					fin_packet.header.type = (RUDP_FIN);
  					sequence_number = sequence_number +1;
- 					fin_packet.header.seqno = htonl(sequence_number);
+ 					fin_packet.header.seqno = (sequence_number);
 
  					packet.rudp_packet = &fin_packet;
  					packet.rudp_socket = rudp_socket;
@@ -679,12 +679,12 @@ int receive_FIN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  		case DATA_TRANSFER:
 
 			// send ACK
- 			ack_packet.header.version = htons(RUDP_VERSION);
- 			ack_packet.header.type = htons(RUDP_ACK);
+ 			ack_packet.header.version = (RUDP_VERSION);
+ 			ack_packet.header.type = (RUDP_ACK);
 
 			// The sequence number of the packet which ACK a packet FIN is the same as the last received data packet
 			// (the same as the FIN packet received).
- 			ack_number = ntohl(rudp_receive.header.seqno);
+ 			ack_number = (rudp_receive.header.seqno);
 
  			ack_packet.header.seqno = rudp_receive.header.seqno;
 
