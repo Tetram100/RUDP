@@ -387,6 +387,8 @@ int receivePacketCallback(int fd, void *arg) {
 		printf("Error while receiving the data\n");
 		return -1;
 	}
+	printf("Reçu %d\nn", rudp_receive.header.version);
+	printf("Attendu %d\n", RUDP_VERSION);
 	if (rudp_receive.header.version != RUDP_VERSION){
 		printf("Wrong RUDP version\n");
 		return -1;    	
