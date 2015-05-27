@@ -77,6 +77,7 @@ int socket_open = 0;
 int receive_set = 0;
 int event_set = 0;
 int s = -1;
+int close_ask = 0; 
 
 int state = 0;
 u_int32_t sequence_number = 0;
@@ -113,6 +114,7 @@ rudp_socket_t rudp_socket(int port) {
 	receive_set = 0;
 	event_set = 0;
 	s = -1;
+	close_ask = 0;
 
 	state = 0;
 	sequence_number = 0;
@@ -182,7 +184,11 @@ rudp_socket_t rudp_socket(int port) {
 
 int rudp_close(rudp_socket_t rsocket) {
 	printf("close called from the program\n");
- 	state = WAIT_BUFFER;
+ 	if ( state == DATA_TRANSFER){
+ 		state = WAIT_BUFFER;
+ 	} else {
+ 		close_ask = 1;
+ 	}
  	return 0;
 }
 
@@ -443,6 +449,11 @@ int receive_SYN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, st
  			send_ack(rudp_socket, &packet);
 
  			state = DATA_TRANSFER;
+
+ 			if ( close_ask == 1){
+ 				state = WAIT_BUFFER;
+ 			}
+
  			return 0;
 
  		default:
