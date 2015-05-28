@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <time.h>
 
 #include "event.h"
 #include "rudp.h"
@@ -110,7 +111,7 @@ int reset_parameter() {
 	socket_open = 0;
 	receive_set = 0;
 	event_set = 0;
-	s = -1;
+	
 	close_ask = 0;
 
 	state = 0;
@@ -200,7 +201,7 @@ int rudp_close(rudp_socket_t rsocket) {
 }
 
 int send_fin(rudp_socket_t rsocket) {
-	printf("FIN sent\n");
+	
 	struct rudp_packet_t fin_packet;
 	struct send_packet packet;;
 	fin_packet.header.version = (RUDP_VERSION);
@@ -213,8 +214,11 @@ int send_fin(rudp_socket_t rsocket) {
 	packet.len = sizeof (struct rudp_hdr);
 	packet.counter = 0;
 
-	list_waiting_ack = add_list(list_waiting_ack, packet);	
-	send_packet(rudp_socket, &(list_waiting_ack->packet));
+	list_waiting_ack = add_list(list_waiting_ack, packet);
+	printf("Avant le dernier envoi.\n");	
+	send_packet(rsocket, &(list_waiting_ack->packet));
+	printf("Après le dernier envoi.\n");
+	printf("FIN sent\n");	
 	state = WAIT_FIN_ACK;
 
 	return 0;
