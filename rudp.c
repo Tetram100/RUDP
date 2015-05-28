@@ -422,7 +422,9 @@ int receivePacketCallback(int fd, void *arg) {
     //Verifications
 
     if(state != LISTEN){
-    	if(sockaddr6_cmp(&sender, destination) != 0){
+    		    
+    	if(getnameinfohost(destination) != getnameinfohost(&sender) || destination->sin6_port != sender.sin6_port){
+    		printf("%d\n", sockaddr6_cmp(&sender, destination));
     		printf("Receive a packet from an unexpected source\n");
     		return 0;
     	}
