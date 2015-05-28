@@ -26,6 +26,8 @@
 #define WAIT_FIN_ACK 4
 #define CLOSED 5
 
+#define NUM_SEQ_MAX 4294967295
+
 struct rudp_packet_t {
 	struct rudp_hdr header;
 	char data[RUDP_MAXPKTSIZE];
@@ -55,7 +57,7 @@ int send_ack(rudp_socket_t rsocket, struct send_packet* packet_ack);
 
 int setTimeOut(struct send_packet* packet);
 int retransmit(void *arg);
-int receive_DATA(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, int bytes); // TODO changer le prototype.
+int receive_DATA(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, int bytes);
 int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive);
 int receive_SYN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, struct sockaddr_in6* sender);
 int receive_FIN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive);
@@ -73,7 +75,6 @@ struct send_packet* point_end_list(struct list_packet *list);
  * Global variables
  */
 
-// TODO Question : est-ce que avoir des variables globales suffit dans notre cas ? -> on n'est censé ne gérer qu'une seule socket par programme.
 int (*handler_receive)(rudp_socket_t, struct sockaddr_in6 *, void *, int);
 int (*handler_event)(rudp_socket_t, rudp_event_t, struct sockaddr_in6 *);
 int socket_open = 0;
@@ -82,7 +83,7 @@ int event_set = 0;
 int s = -1;
 int close_ask = 0; 
 
-int state = 0;
+int state = LISTEN;
 u_int32_t sequence_number = 0;
 u_int32_t ack_number =0;
 int window = RUDP_WINDOW;
@@ -172,9 +173,6 @@ rudp_socket_t rudp_socket(int port) {
 		// State of the socket set at LISTEN
  		state = LISTEN;
 
-		// TODO attention à cette ligne
- 		//rudp_socket_t rudp_socket = &s;
-
  		socket_open = 1;
  		printf("Socket is opened\n");
  		return &s;
@@ -237,9 +235,9 @@ int rudp_recvfrom_handler(rudp_socket_t rsocket,
  		return 0;
  	}
  	else{
- 		return 1;
+ 		printf("Recvfrom Handler already set\n");	
  	}
-
+ 	return 0;
 }
 
 /* 
@@ -255,7 +253,10 @@ int rudp_event_handler(rudp_socket_t rsocket,
  		event_set = 1;
  		return 0;
  	}
- 	return 1;
+ 	else{
+ 		printf("Event Handler already set\n");
+ 	}
+ 	return 0;
 }
 
 /* 
@@ -277,11 +278,11 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
  	// The first time sendto is called we send a SYN packet.
  	if (state == LISTEN){
  		struct rudp_packet_t syn_packet;
- 		syn_packet.header.version = (RUDP_VERSION);
- 		syn_packet.header.type = (RUDP_SYN);
+ 		syn_packet.header.version = RUDP_VERSION;
+ 		syn_packet.header.type = RUDP_SYN;
 		// Plus 1 to avoid a 0 sequence number
- 		sequence_number = (rand() % (u_int32_t)pow(2,32)) + 1;
- 		syn_packet.header.seqno = (sequence_number);
+ 		sequence_number = (u_int32_t) (rand() % NUM_SEQ_MAX) + 1;
+ 		syn_packet.header.seqno = sequence_number;
  		destination = to;
 
  		struct send_packet syn_packet_send;
@@ -419,13 +420,20 @@ int receivePacketCallback(int fd, void *arg) {
 	int bytes = recvfrom((int) fd, (void*)&rudp_receive, sizeof (rudp_receive), 0, (struct sockaddr*) &sender, (socklen_t*) &addr_size);
 
     //Verifications
+
+    if(state != LISTEN){
+    	if(sockaddr6_cmp(&sender, destination) != 0){
+    		printf("Receive a packet from an unexpected source\n");
+    		return 0;
+    	}
+    }
 	if (bytes <=0){
 		printf("Error while receiving the data\n");
-		return -1;
+		return 0;
 	}
 	if (rudp_receive.header.version != RUDP_VERSION){
 		printf("Wrong RUDP version\n");
-		return -1;    	
+		return 0;    	
 	}
 
 	switch(rudp_receive.header.type) {
@@ -451,7 +459,7 @@ int receivePacketCallback(int fd, void *arg) {
 
 		default:
 			printf("Wrong Type packet\n");
-			return -1;
+			return 0;
 	}
 }
 
@@ -472,7 +480,7 @@ int receive_SYN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, st
  			ack_packet.header.type = (RUDP_ACK);
 
  			ack_number = (rudp_receive.header.seqno) + 1;
- 			sequence_number = (rand() % (u_int32_t)pow(2,32)) + 1; // in case we need to send data as well.
+ 			sequence_number = (u_int32_t) (rand() % NUM_SEQ_MAX) + 1; // in case we need to send data as well.
 
  			ack_packet.header.seqno = (ack_number);
 
@@ -494,7 +502,6 @@ int receive_SYN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, st
  	}
 }
 
-// TODO changer le prototype une fois les paramètres mis au point.
 int receive_DATA(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, int bytes){
 
  	struct rudp_packet_t ack_packet;
@@ -721,7 +728,6 @@ int receive_FIN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  */
 
 // Add the packet at the end of the list.
-// TODO passer un pointeur sur le paquet ?
 
 struct list_packet* add_list(struct list_packet *list, struct send_packet packet_to_send){
  	struct list_packet *new_element = malloc(sizeof(struct list_packet));
@@ -833,3 +839,19 @@ struct send_packet* point_end_list(struct list_packet *list){
 
 	return temp_return;
 }
+
+/*
+ * Manipulation of seq numbers.
+ */
+
+ u_int32_t get_actual_seq(u_int32_t relative_seq){
+ 	return (relative_seq + initial_seq_number )%NUM_SEQ_MAX;
+ }
+
+ u_int32_t get_actual_ack(u_int32_t relative_ack){
+ 	return (relative_ack + initial_ack_number )%NUM_SEQ_MAX;
+ }
+
+ u_int32_t get_relative_seq(u_int32_t actual_seq){
+ 	return (actual_seq - initial_seq_number )%NUM_SEQ_MAX;
+ }
