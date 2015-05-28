@@ -111,8 +111,6 @@ struct list_packet *list_buffer_to_app = NULL;
 
 int reset_parameter() {
 
-	handler_receive = NULL;
-	handler_event = NULL;
 	socket_open = 0;
 	receive_set = 0;
 	event_set = 0;
@@ -290,6 +288,7 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
  		syn_packet.header.version = RUDP_VERSION;
  		syn_packet.header.type = RUDP_SYN;
 		// Plus 1 to avoid a 0 sequence number
+		srand(time(NULL));
  		initial_seq_number = (u_int32_t) (rand() % NUM_SEQ_MAX) + 1;
  		sequence_number = 0;
  		syn_packet.header.seqno = initial_seq_number;
@@ -476,8 +475,9 @@ int receive_SYN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, st
  			ack_number = 0;
  			sequence_number = 0; // in case we need to send data as well.
 
- 			initial_seq_number = ((rudp_receive.header.seqno) + 1)%NUM_SEQ_MAX;
- 			initial_ack_number = (u_int32_t) (rand() % NUM_SEQ_MAX) + 1;
+ 			initial_ack_number = ((rudp_receive.header.seqno) + 1)%NUM_SEQ_MAX;
+ 			srand(time(NULL));
+ 			initial_seq_number= (u_int32_t) (rand() % NUM_SEQ_MAX) + 1;
 
  			ack_packet.header.seqno = get_actual_ack(ack_number);
 
@@ -612,6 +612,7 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
 			
 			
 			//TODO expression bien sale dans le if, à vérifier qu'il n'y ait pas d'erreur de syntaxe.
+ 		printf("seq rec: %d ; seq : %d\n", get_relative_seq(rudp_receive.header.seqno), seq_wait_relative);
 
  			if(get_relative_seq(rudp_receive.header.seqno) == seq_wait_relative + 1){
  				// Delete the timeout for the SYN packet.
