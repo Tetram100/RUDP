@@ -809,7 +809,7 @@ struct list_packet* insert_list_seq(struct list_packet *list, struct send_packet
 
 		u_int32_t seq_received_relative = get_relative_ack((((packet_received).rudp_packet).header).seqno);
 
-		while(temp != NULL && (seq_received_relative > get_relative_ack((((temp->packet).rudp_packet).header).seqno)) {
+		while(temp != NULL && (seq_received_relative > get_relative_ack((((temp->packet).rudp_packet).header).seqno))){
 			temp_before = temp;
 			temp = temp->next_packet;
 		}
