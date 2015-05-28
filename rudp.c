@@ -72,6 +72,11 @@ int get_number_packets_acked(u_int32_t ack_numb_received);
 struct list_packet* insert_list_seq(struct list_packet *list, struct send_packet packet_received);
 struct send_packet* point_end_list(struct list_packet *list);
 
+u_int32_t get_actual_seq(u_int32_t relative_seq);
+u_int32_t get_actual_ack(u_int32_t relative_ack);
+u_int32_t get_relative_seq(u_int32_t actual_seq);
+u_int32_t get_relative_ack(u_int32_t actual_ack);
+
 /*
  * Global variables
  */
@@ -204,10 +209,10 @@ int send_fin(rudp_socket_t rsocket) {
 	
 	struct rudp_packet_t fin_packet;
 	struct send_packet packet;;
-	fin_packet.header.version = (RUDP_VERSION);
-	fin_packet.header.type = (RUDP_FIN);
-	sequence_number = sequence_number + 1;
-	fin_packet.header.seqno = (sequence_number);
+	fin_packet.header.version = RUDP_VERSION;
+	fin_packet.header.type = RUDP_FIN;
+	sequence_number = (sequence_number + 1)%NUM_SEQ_MAX;
+	fin_packet.header.seqno = get_actual_seq(sequence_number);
 
 	packet.rudp_packet = fin_packet;
 	packet.rudp_socket = rsocket;
@@ -215,9 +220,9 @@ int send_fin(rudp_socket_t rsocket) {
 	packet.counter = 0;
 
 	list_waiting_ack = add_list(list_waiting_ack, packet);
-	printf("Avant le dernier envoi.\n");	
+		
 	send_packet(rsocket, &(list_waiting_ack->packet));
-	printf("Après le dernier envoi.\n");
+	
 	printf("FIN sent\n");	
 	state = WAIT_FIN_ACK;
 
@@ -285,8 +290,9 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
  		syn_packet.header.version = RUDP_VERSION;
  		syn_packet.header.type = RUDP_SYN;
 		// Plus 1 to avoid a 0 sequence number
- 		sequence_number = (u_int32_t) (rand() % NUM_SEQ_MAX) + 1;
- 		syn_packet.header.seqno = sequence_number;
+ 		initial_seq_number = (u_int32_t) (rand() % NUM_SEQ_MAX) + 1;
+ 		sequence_number = 0;
+ 		syn_packet.header.seqno = initial_seq_number;
  		destination = to;
 
  		struct send_packet syn_packet_send;
@@ -308,8 +314,8 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
  	data_packet.header.version = (RUDP_VERSION);
  	data_packet.header.type = (RUDP_DATA);
 
- 	sequence_number = sequence_number + 1;
- 	data_packet.header.seqno = (sequence_number);
+ 	sequence_number = (sequence_number + 1)%NUM_SEQ_MAX;
+ 	data_packet.header.seqno = (get_actual_seq(sequence_number));
 
  	memcpy(data_packet.data, data, len);
 
@@ -319,13 +325,6 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
  	packet.rudp_socket = rsocket;
  	packet.len = len + sizeof (struct rudp_hdr);
  	packet.counter = 0;
-
- 	/*if (window > 0) {
- 		send_packet(rsocket, &packet);
- 	} else {
-		// Add the packet to the list of packet waiting to be sent.
- 		list_to_send = add_list(list_to_send, packet);
- 	}*/
 
  	printf("Packed added to the list_to_send\n");
  	// We store the packet in the sending buffer. The function which sends the packet will be called each time we receive an ACK.
@@ -383,19 +382,8 @@ int retransmit(void *arg){
  	if (packet->counter >= RUDP_MAXRETRANS){
  		handler_event(packet->rudp_socket, RUDP_EVENT_TIMEOUT, destination);
  	} else {
-
  		send_packet(packet->rudp_socket, packet);
  		printf("Timeout expired. Packet retransmit\n");
-
- 		// if (sendto(*((int*)packet->rudp_socket), (void *) packet->rudp_packet, packet->len, 0, (struct sockaddr*) destination, sizeof(struct sockaddr_in6)) < 0) {
- 		// 	printf("Failed to send retransmit packet\n");
- 		// 	return -1;
- 		// }
- 		// printf("Packet retransmit\n");
- 		// packet->counter++;
- 		// if (setTimeOut(packet) != 0){
- 		// 	return -1;
- 		// }
  	}
 
  	return 0;
@@ -425,8 +413,7 @@ int receivePacketCallback(int fd, void *arg) {
 
     //Verifications
 
-    if(state != LISTEN){
-    		    
+    if(state != LISTEN){ 		    
     	if(getnameinfohost(destination) != getnameinfohost(&sender) || destination->sin6_port != sender.sin6_port){
     		printf("%d\n", sockaddr6_cmp(&sender, destination));
     		printf("Receive a packet from an unexpected source\n");
@@ -476,21 +463,24 @@ int receivePacketCallback(int fd, void *arg) {
 int receive_SYN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, struct sockaddr_in6* sender){
 
  	struct rudp_packet_t ack_packet;
+ 	struct send_packet packet;
 
  	switch(state){
  		case LISTEN:
  			destination = sender;
 
 			// send ACK
- 			ack_packet.header.version = (RUDP_VERSION);
- 			ack_packet.header.type = (RUDP_ACK);
+ 			ack_packet.header.version = RUDP_VERSION;
+ 			ack_packet.header.type = RUDP_ACK;
 
- 			ack_number = (rudp_receive.header.seqno) + 1;
- 			sequence_number = (u_int32_t) (rand() % NUM_SEQ_MAX) + 1; // in case we need to send data as well.
+ 			ack_number = 0;
+ 			sequence_number = 0; // in case we need to send data as well.
 
- 			ack_packet.header.seqno = (ack_number);
+ 			initial_seq_number = ((rudp_receive.header.seqno) + 1)%NUM_SEQ_MAX;
+ 			initial_ack_number = (u_int32_t) (rand() % NUM_SEQ_MAX) + 1;
 
- 			struct send_packet packet;
+ 			ack_packet.header.seqno = get_actual_ack(ack_number);
+
  			packet.rudp_packet = ack_packet;
  			packet.rudp_socket = rudp_socket;
  			packet.len = sizeof (struct rudp_hdr);
@@ -500,6 +490,19 @@ int receive_SYN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, st
 
  			state = DATA_TRANSFER;
 
+ 			return 0;
+
+ 		case DATA_TRANSFER:
+ 			ack_packet.header.version = RUDP_VERSION;
+ 			ack_packet.header.type = RUDP_ACK;
+ 			ack_packet.header.seqno = get_actual_ack(ack_number);
+
+ 			packet.rudp_packet = ack_packet;
+ 			packet.rudp_socket = rudp_socket;
+ 			packet.len = sizeof (struct rudp_hdr);
+ 			packet.counter = 0;
+
+ 			send_ack(rudp_socket, &packet);
  			return 0;
 
  		default:
@@ -512,18 +515,18 @@ int receive_DATA(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, i
 
  	struct rudp_packet_t ack_packet;
  	struct send_packet packet;
- 	u_int32_t seqno_rec = (rudp_receive.header.seqno);
+ 	u_int32_t seqno_rec_relative = get_relative_ack(rudp_receive.header.seqno);
 
  	switch(state){
  		case DATA_TRANSFER:
  			// send ack, update ack number, make the difference between the packet we have already received (just resend the ack with the actual ack) and the others,
  			// send the packet to the application through the handler function, store and reorganize if wrong order.
 
- 			if(seqno_rec < ack_number){
+ 			if(seqno_rec_relative < ack_number){
  				// We have already received the packet. Acknowledge with the current ack_number.
- 				ack_packet.header.version = (RUDP_VERSION);
- 				ack_packet.header.type = (RUDP_ACK);
- 				ack_packet.header.seqno = (ack_number);
+ 				ack_packet.header.version = RUDP_VERSION;
+ 				ack_packet.header.type = RUDP_ACK;
+ 				ack_packet.header.seqno = get_actual_ack(ack_number);
  				
  				packet.rudp_packet = ack_packet;
  				packet.rudp_socket = rudp_socket;
@@ -534,28 +537,28 @@ int receive_DATA(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, i
  				return 0;
  			}
 
- 			if(seqno_rec == ack_number){
+ 			if(seqno_rec_relative == ack_number){
  				// The packet is the one we expected next. We check if the buffer for arriving packet is empty. If not, we send all the packets
  				// which seq numbers follows each others to the application. We ack the last packet sent to the application.
 
  				// Send the packet we just received to the application.
  				handler_receive(rudp_socket, destination, (void*) rudp_receive.data, bytes - (int) sizeof(struct rudp_hdr));
- 				ack_number += 1;
+ 				ack_number = (ack_number+1)%NUM_SEQ_MAX;
 
  				if(list_buffer_to_app != NULL){
 
  					struct list_packet* temp = list_buffer_to_app;
 
- 					while(temp != NULL && (((temp->packet).rudp_packet).header).seqno == ack_number){
+ 					while(temp != NULL && (((temp->packet).rudp_packet).header).seqno == get_actual_ack(ack_number)){
  						handler_receive(rudp_socket, destination, (void*) temp->packet.rudp_packet.data, temp->packet.len - (int) sizeof(struct rudp_hdr));
- 						ack_number += 1;
+ 						ack_number = (ack_number+1)%NUM_SEQ_MAX;
  						temp = temp->next_packet;
  						list_buffer_to_app = remove_head_list(list_buffer_to_app);
  					}
  				}
  				ack_packet.header.version = (RUDP_VERSION);
 	 			ack_packet.header.type = (RUDP_ACK);
-	 			ack_packet.header.seqno = (ack_number);
+	 			ack_packet.header.seqno = get_actual_ack(ack_number);
 
 	 			packet.rudp_packet = ack_packet;
 	 			packet.rudp_socket = rudp_socket;
@@ -566,7 +569,7 @@ int receive_DATA(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, i
  				return 0;
  			}
 
- 			if(seqno_rec > ack_number){
+ 			if(seqno_rec_relative > ack_number){
  				// Put the packet in the buffer list, resend the ack of the packet we are expecting. We can't send packet to the applicatoin yet.
  				struct send_packet packet_to_insert;
  				packet_to_insert.rudp_packet = rudp_receive;
@@ -580,7 +583,7 @@ int receive_DATA(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, i
 
  				ack_packet.header.version = (RUDP_VERSION);
  				ack_packet.header.type = (RUDP_ACK);
- 				ack_packet.header.seqno = (ack_number);
+ 				ack_packet.header.seqno = get_actual_ack(ack_number);
 
  				struct send_packet packet;
  				packet.rudp_packet = ack_packet;
@@ -602,15 +605,15 @@ int receive_DATA(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, i
 
 int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
 
-	u_int32_t ack_rec = ((((list_waiting_ack->packet).rudp_packet).header).seqno);
+	u_int32_t seq_wait_relative = get_relative_seq((((list_waiting_ack->packet).rudp_packet).header).seqno);
 
  	switch(state){
  		case SYN_SENT:
 			
-			printf("Case SYN_SENT. RUDP number receive: %d. Compared with SYN number: %d + 1\n",rudp_receive.header.seqno,((((list_waiting_ack->packet).rudp_packet).header).seqno));
+			
 			//TODO expression bien sale dans le if, à vérifier qu'il n'y ait pas d'erreur de syntaxe.
 
- 			if(rudp_receive.header.seqno == ack_rec + 1){
+ 			if(get_relative_seq(rudp_receive.header.seqno) == seq_wait_relative + 1){
  				// Delete the timeout for the SYN packet.
  				event_timeout_delete(&retransmit, &(list_waiting_ack->packet));
  				list_waiting_ack = remove_head_list(list_waiting_ack);
@@ -634,13 +637,12 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  		case WAIT_BUFFER:
 			// changer la valeur de window. déclencher l'envoi des paquets dans le buffer.
 			// Remove the timeout event for the packets ack
- 			//TODO expression bien sale dans le if, à vérifier qu'il n'y ait pas d'erreur de syntaxe.
- 			if(rudp_receive.header.seqno < ack_rec + 1){
+ 			if(get_relative_seq(rudp_receive.header.seqno) < seq_wait_relative + 1){
  				printf("Receive an ACK packet with an old seq number.\n");
- 				return -1;
+ 				return 0;
  			}
- 			//TODO expression bien sale dans le if, à vérifier qu'il n'y ait pas d'erreur de syntaxe.
- 			if(rudp_receive.header.seqno == ack_rec + 1){
+ 			
+ 			if(get_relative_seq(rudp_receive.header.seqno) == seq_wait_relative + 1){
  				event_timeout_delete(&retransmit, &(list_waiting_ack->packet));
  				list_waiting_ack = remove_head_list(list_waiting_ack);
  				if(window < RUDP_WINDOW){
@@ -653,8 +655,8 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  				}
  				return 0;
  			}
- 			//TODO expression bien sale dans le if, à vérifier qu'il n'y ait pas d'erreur de syntaxe.
- 			if(rudp_receive.header.seqno > ack_rec + 1){
+ 			
+ 			if(get_relative_seq(rudp_receive.header.seqno) > seq_wait_relative + 1){
  				int numb = get_number_packets_acked(rudp_receive.header.seqno);
  				int window_temp = window;
 
@@ -699,28 +701,34 @@ int receive_FIN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  	switch(state){
  		case DATA_TRANSFER:
 
-			// send ACK
- 			ack_packet.header.version = (RUDP_VERSION);
- 			ack_packet.header.type = (RUDP_ACK);
+ 			if(rudp_receive.header.seqno == get_actual_ack(ack_number)){
 
-			// The sequence number of the packet which ACK a packet FIN is the same as the last received data packet
-			// (the same as the FIN packet received).
- 			ack_number = (rudp_receive.header.seqno);
+				// send ACK
+	 			ack_packet.header.version = RUDP_VERSION;
+	 			ack_packet.header.type = RUDP_ACK;
 
- 			ack_packet.header.seqno = rudp_receive.header.seqno;
+				// The sequence number of the packet which ACK a packet FIN is the same as the last received data packet
+				// (the same as the FIN packet received).
+	 			ack_number = (rudp_receive.header.seqno);
 
- 			packet.rudp_packet = ack_packet;
- 			packet.rudp_socket = rudp_socket;
- 			packet.len = sizeof (struct rudp_hdr);
- 			packet.counter = 0;
+	 			ack_packet.header.seqno = rudp_receive.header.seqno;
 
- 			send_ack(rudp_socket, &packet);
+	 			packet.rudp_packet = ack_packet;
+	 			packet.rudp_socket = rudp_socket;
+	 			packet.len = sizeof (struct rudp_hdr);
+	 			packet.counter = 0;
 
-			// TODO faut-il faire plus que ça avant de passer dans l'état closed ?
- 			state = CLOSED;
- 			// We reset the parameters to be ready to accept a new connection
- 			reset_parameter();			
- 			return 0;
+	 			send_ack(rudp_socket, &packet);
+
+				// TODO faut-il faire plus que ça avant de passer dans l'état closed ?
+	 			state = CLOSED;
+	 			// We reset the parameters to be ready to accept a new connection
+	 			reset_parameter();			
+	 			return 0;
+	 		}else{
+	 			printf("FIN with wrong seq number");
+	 			return -1;
+	 		}
 
  		default:
  			printf("Receive a FIN packet unexpectedly.\n");
@@ -777,10 +785,12 @@ int get_number_packets_acked(u_int32_t ack_numb_received){
 	printf("number of packets that have been acked\n");
  	int numb_packet = 0;
 
+ 	u_int32_t relative_ack_received = get_relative_seq(ack_numb_received);
+
  	struct list_packet *temp = list_waiting_ack;
 
  	//TODO expression bien sale dans le while, à vérifier qu'il n'y ait pas d'erreur de syntaxe.
- 	while((temp->packet.rudp_packet.header.seqno + 1) <= ack_numb_received){
+ 	while(get_relative_seq(temp->packet.rudp_packet.header.seqno + 1) <= relative_ack_received){
  		numb_packet += 1;
  		temp = temp->next_packet;
  	}
@@ -790,16 +800,16 @@ int get_number_packets_acked(u_int32_t ack_numb_received){
 
 // Insert the packet in the list, seq number following the ascending order.
 struct list_packet* insert_list_seq(struct list_packet *list, struct send_packet packet_received){
-	printf("Insert the packet in the list following seq number\n");
+	printf("Insert the packet in the list following seq number.\n");
 	struct list_packet* return_list = list;
 
 	if(list != NULL){
 		struct list_packet* temp_before = NULL;
 		struct list_packet* temp = list;
 
-		u_int32_t seq_received = (((packet_received).rudp_packet).header).seqno;
+		u_int32_t seq_received_relative = get_relative_ack((((packet_received).rudp_packet).header).seqno);
 
-		while(temp != NULL && (seq_received > (((temp->packet).rudp_packet).header).seqno)){
+		while(temp != NULL && (seq_received_relative > get_relative_ack((((temp->packet).rudp_packet).header).seqno)) {
 			temp_before = temp;
 			temp = temp->next_packet;
 		}
@@ -859,5 +869,25 @@ struct send_packet* point_end_list(struct list_packet *list){
  }
 
  u_int32_t get_relative_seq(u_int32_t actual_seq){
- 	return (actual_seq - initial_seq_number )%NUM_SEQ_MAX;
+
+ 	u_int32_t return_seq = 0;
+ 	if(actual_seq < initial_seq_number){
+ 		return_seq = -((actual_seq - initial_seq_number )%NUM_SEQ_MAX);
+ 	}
+ 	else{
+ 		return_seq = (actual_seq - initial_seq_number )%NUM_SEQ_MAX;
+ 	}
+ 	return return_seq;
+ }
+
+ u_int32_t get_relative_ack(u_int32_t actual_ack){
+
+ 	u_int32_t return_ack = 0;
+ 	if(actual_ack < initial_ack_number){
+ 		return_ack = -((actual_ack - initial_ack_number )%NUM_SEQ_MAX);
+ 	}
+ 	else{
+ 		return_ack = (actual_ack - initial_ack_number )%NUM_SEQ_MAX;
+ 	}
+ 	return return_ack;
  }
