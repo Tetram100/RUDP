@@ -60,6 +60,8 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive);
 int receive_SYN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive, struct sockaddr_in6* sender);
 int receive_FIN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive);
 int send_buffer(rudp_socket_t rsocket);
+int send_fin(rudp_socket_t rsocket);
+int reset_parameter();
 
 struct list_packet* add_list(struct list_packet *list, struct send_packet packet_to_send);
 struct list_packet* remove_head_list(struct list_packet *list);
@@ -100,14 +102,7 @@ struct list_packet *list_waiting_ack = NULL;
 struct list_packet *list_buffer_to_app = NULL;
 
 
-
-/* 
- * rudp_socket: Create a RUDP socket. 
- * May use a random port by setting port to zero. 
- */
-
-rudp_socket_t rudp_socket(int port) {
-
+int reset_parameter() {
 
 	handler_receive = NULL;
 	handler_event = NULL;
@@ -135,6 +130,17 @@ rudp_socket_t rudp_socket(int port) {
 
 	// Packets received, but with a too big seq number, waiting for the missing packet to arrive.
 	list_buffer_to_app = NULL;
+
+	return 0;
+}
+
+/* 
+ * rudp_socket: Create a RUDP socket. 
+ * May use a random port by setting port to zero. 
+ */
+rudp_socket_t rudp_socket(int port) {
+
+	reset_parameter();
 
  	if(socket_open != 1){
  		s = socket(AF_INET6, SOCK_DGRAM, 0);
@@ -185,13 +191,37 @@ rudp_socket_t rudp_socket(int port) {
 
 int rudp_close(rudp_socket_t rsocket) {
 	printf("close called from the program\n");
- 	if ( state == DATA_TRANSFER){
+ 	if ( (state == DATA_TRANSFER) &&  (list_waiting_ack == NULL) && (list_to_send == NULL)){
+ 		send_fin(rsocket);
+ 	} else if (state == DATA_TRANSFER){
  		state = WAIT_BUFFER;
  	} else {
  		close_ask = 1;
  	}
  	return 0;
 }
+
+int send_fin(rudp_socket_t rsocket) {
+	printf("FIN sent\n");
+	struct rudp_packet_t fin_packet;
+	struct send_packet packet;;
+	fin_packet.header.version = (RUDP_VERSION);
+	fin_packet.header.type = (RUDP_FIN);
+	sequence_number = sequence_number + 1;
+	fin_packet.header.seqno = (sequence_number);
+
+	packet.rudp_packet = fin_packet;
+	packet.rudp_socket = rsocket;
+	packet.len = sizeof (struct rudp_hdr);
+	packet.counter = 0;
+
+	list_waiting_ack = add_list(list_waiting_ack, packet);	
+	send_packet(rudp_socket, &(list_waiting_ack->packet));
+	state = WAIT_FIN_ACK;
+
+	return 0;
+}
+
 
 /* 
  *rudp_recvfrom_handler: Register receive callback function 
@@ -260,7 +290,7 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
  		syn_packet_send.len = sizeof (struct rudp_hdr);
  		syn_packet_send.counter = 0;
 
- 		printf("List waiting ack\n");
+ 		printf("Packet added to the list_waiting_ack\n");
  		list_waiting_ack = add_list(list_waiting_ack, syn_packet_send);	
 
  		send_packet(rsocket, &(list_waiting_ack->packet));
@@ -292,7 +322,7 @@ int rudp_sendto(rudp_socket_t rsocket, void* data, int len, struct sockaddr_in6*
  		list_to_send = add_list(list_to_send, packet);
  	}*/
 
- 	printf("List to send\n");
+ 	printf("Packed added to the list_to_send\n");
  	// We store the packet in the sending buffer. The function which sends the packet will be called each time we receive an ACK.
  	list_to_send = add_list(list_to_send, packet);
 
@@ -334,6 +364,7 @@ int send_buffer(rudp_socket_t rsocket){
  		list_waiting_ack = add_list(list_waiting_ack, list_to_send->packet);
  		send_packet(rsocket, point_end_list(list_waiting_ack));
  		printf("Packet sent\n");
+ 		printf("Packet added to the list_waiting_ack\n");
  		list_to_send = remove_head_list(list_to_send);
  		window = window - 1;
  	}
@@ -349,7 +380,7 @@ int retransmit(void *arg){
  	} else {
 
  		send_packet(packet->rudp_socket, packet);
- 		printf("Packet retransmit\n");
+ 		printf("Timeout expired. Packet retransmit\n");
 
  		// if (sendto(*((int*)packet->rudp_socket), (void *) packet->rudp_packet, packet->len, 0, (struct sockaddr*) destination, sizeof(struct sockaddr_in6)) < 0) {
  		// 	printf("Failed to send retransmit packet\n");
@@ -605,23 +636,7 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  				send_buffer(rudp_socket);
  				if (state == WAIT_BUFFER && list_waiting_ack == NULL){
  					// We send the FIN packet
- 					printf("FIN sent\n");
- 					struct rudp_packet_t fin_packet;
- 					struct send_packet packet;;
- 					fin_packet.header.version = (RUDP_VERSION);
- 					fin_packet.header.type = (RUDP_FIN);
- 					sequence_number = sequence_number + 1;
- 					fin_packet.header.seqno = (sequence_number);
-
- 					packet.rudp_packet = fin_packet;
- 					packet.rudp_socket = rudp_socket;
- 					packet.len = sizeof (struct rudp_hdr);
- 					packet.counter = 0;
-
- 					printf("List waiting ack\n");
- 					list_waiting_ack = add_list(list_waiting_ack, packet);	
- 					send_packet(rudp_socket, &(list_waiting_ack->packet));
- 					state = WAIT_FIN_ACK;				
+					send_fin(rudp_socket);				
  				}
  				return 0;
  			}
@@ -644,23 +659,7 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  				send_buffer(rudp_socket);
  				if (state == WAIT_BUFFER && list_waiting_ack == NULL){
  					// We send the FIN packet
- 					printf("FIN sent\n");
- 					struct rudp_packet_t fin_packet;
- 					struct send_packet packet;
- 					fin_packet.header.version = (RUDP_VERSION);
- 					fin_packet.header.type = (RUDP_FIN);
- 					sequence_number = sequence_number +1;
- 					fin_packet.header.seqno = (sequence_number);
-
- 					packet.rudp_packet = fin_packet;
- 					packet.rudp_socket = rudp_socket;
- 					packet.len = sizeof (struct rudp_hdr);
- 					packet.counter = 0;
-
- 					printf("List waiting ack\n");
- 					list_waiting_ack = add_list(list_waiting_ack, packet);	
- 					send_packet(rudp_socket, &(list_waiting_ack->packet));
- 					state = WAIT_FIN_ACK;				
+ 					send_fin(rudp_socket);			
  				}
  				return 0;
  			} 
@@ -706,7 +705,8 @@ int receive_FIN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
 
 			// TODO faut-il faire plus que ça avant de passer dans l'état closed ?
  			state = CLOSED;
- 			handler_event(rudp_socket, RUDP_EVENT_CLOSED, NULL); 			
+ 			// We reset the parameters to be ready to accept a new connection
+ 			reset_parameter();			
  			return 0;
 
  		default:
