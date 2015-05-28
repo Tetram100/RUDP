@@ -1,7 +1,7 @@
 RUDP
 ====
 
-This is a simple implementation of the RUDP protocol for the IK2213 course. RUDP is a protocol just in top of UDP that makes it reliable. It supports sliding window flow control, ARQ-based packet retransmissions and reordering of packets that arrive out of order. The program is composed of an event handler calling the RUDP fonctions.
+This is a simple implementation of the RUDP protocol for the IK2213 course. RUDP is a protocol just in top of UDP that makes it reliable. It supports sliding window flow control, ARQ-based packet retransmission and reordering of packets that arrive out of order. The program is composed of an event handler calling the RUDP functions.
 
 How to compile
 -----------------------

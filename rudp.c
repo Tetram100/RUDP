@@ -197,6 +197,9 @@ int rudp_close(rudp_socket_t rsocket) {
  		send_fin(rsocket);
  	} else if (state == DATA_TRANSFER){
  		state = WAIT_BUFFER;
+ 	} else if ( state == LISTEN) { 
+ 		close(*((int*)rsocket));
+ 		state = CLOSED;
  	} else {
  		close_ask = 1;
  	}
@@ -611,7 +614,6 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  		case SYN_SENT:
 			
 			
-			//TODO expression bien sale dans le if, à vérifier qu'il n'y ait pas d'erreur de syntaxe.
  		printf("seq rec: %d ; seq : %d\n", get_relative_seq(rudp_receive.header.seqno), seq_wait_relative);
 
  			if(get_relative_seq(rudp_receive.header.seqno) == seq_wait_relative + 1){
@@ -686,6 +688,7 @@ int receive_ACK(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
  				event_timeout_delete(&retransmit, &(list_waiting_ack->packet));
  				list_waiting_ack = remove_head_list(list_waiting_ack);
  				state = CLOSED;
+ 				close(*((int*)rudp_socket));
  				handler_event(rudp_socket, RUDP_EVENT_CLOSED, NULL);
  			}
  			return 0;
@@ -721,7 +724,6 @@ int receive_FIN(rudp_socket_t rudp_socket, struct rudp_packet_t rudp_receive){
 
 	 			send_ack(rudp_socket, &packet);
 
-				// TODO faut-il faire plus que ça avant de passer dans l'état closed ?
 	 			state = CLOSED;
 	 			// We reset the parameters to be ready to accept a new connection
 	 			reset_parameter();			
@@ -790,7 +792,6 @@ int get_number_packets_acked(u_int32_t ack_numb_received){
 
  	struct list_packet *temp = list_waiting_ack;
 
- 	//TODO expression bien sale dans le while, à vérifier qu'il n'y ait pas d'erreur de syntaxe.
  	while(get_relative_seq(temp->packet.rudp_packet.header.seqno + 1) <= relative_ack_received){
  		numb_packet += 1;
  		temp = temp->next_packet;
