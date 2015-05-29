@@ -414,6 +414,10 @@ int receivePacketCallback(int fd, void *arg) {
 	int bytes = recvfrom((int) fd, (void*)&rudp_receive, sizeof (rudp_receive), 0, (struct sockaddr*) &sender, (socklen_t*) &addr_size);
 
     //Verifications
+    if(sender.sin6_family != AF_INET6){
+    	printf("Unsupported address family");
+    	return 0;
+    }
 
     if(state != LISTEN){ 		    
     	if(getnameinfohost(destination) != getnameinfohost(&sender) || destination->sin6_port != sender.sin6_port){
